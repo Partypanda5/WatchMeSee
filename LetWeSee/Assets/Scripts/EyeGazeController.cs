@@ -36,7 +36,6 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
     [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.2f;
     [SerializeField, Range(0f, 1f)] private float startingEyeAimRange = 0.7f;
-    [SerializeField] private Vector2 focusTargetRandomRange = new Vector2(2.5f, 1.6f);
 
 
     private enum DraggedEye { None, Left, Right }
@@ -96,18 +95,6 @@ public sealed class EyeGazeController : MonoBehaviour
             mirrorTarget = GameObject.Find("MirrorTarget").transform;
 
         EnsureSequenceTargets();
-        if (!sequenceEnabled && focusTarget != null)
-        {
-            Vector3 target = focusTarget.position;
-            Vector2 viewCenter = new Vector2(
-                (leftCameraStart.x + rightCameraStart.x) * 0.5f,
-                (leftCameraStart.y + rightCameraStart.y) * 0.5f);
-            focusTarget.position = new Vector3(
-                viewCenter.x + Random.Range(-focusTargetRandomRange.x, focusTargetRandomRange.x),
-                viewCenter.y + Random.Range(-focusTargetRandomRange.y, focusTargetRandomRange.y),
-                target.z);
-        }
-
         if (inputActions == null) return;
         eyeMap = inputActions.FindActionMap("EyeControls", true);
         pointerPosition = eyeMap.FindAction("PointerPosition", true);
@@ -142,10 +129,11 @@ public sealed class EyeGazeController : MonoBehaviour
         {
             cameraTravel = Mathf.Max(cameraTravel, 10f);
             EnsureRoomBackdrop(placeholderSprite);
+            EnsureBathroomEnvironment(placeholderSprite);
         }
         if (sequenceEnabled)
         {
-            RandomizeSequenceTargetPositions();
+            PlaceBathroomSequenceTargets();
             UpdateSequenceLabelVisibility();
         }
         if (sequenceEnabled && focusTarget != null && focusTarget != deodorantTarget)
@@ -185,6 +173,98 @@ public sealed class EyeGazeController : MonoBehaviour
             AddWorldPart(wall.transform, "TileSeamVertical", sprite, new Vector2(x, 0f), new Vector2(0.025f, height), grout, -29);
         for (float y = -height * 0.5f + 2f; y < height * 0.5f; y += 2.5f)
             AddWorldPart(wall.transform, "TileSeamHorizontal", sprite, new Vector2(0f, y), new Vector2(width, 0.025f), grout, -29);
+    }
+
+    private void EnsureBathroomEnvironment(Sprite sprite)
+    {
+        if (GameObject.Find("BathroomEnvironment") != null) return;
+
+        Transform room = new GameObject("BathroomEnvironment").transform;
+
+        AddWorldPart(room, "BathroomFloor", sprite, new Vector2(0f, -4.25f), new Vector2(38f, 1.5f),
+            new Color(0.25f, 0.31f, 0.34f), -20);
+        AddWorldPart(room, "FloorEdge", sprite, new Vector2(0f, -3.48f), new Vector2(38f, 0.08f),
+            new Color(0.75f, 0.78f, 0.77f), -19);
+
+        AddWorldPart(room, "SinkCabinet", sprite, new Vector2(0f, -2.03f), new Vector2(6.6f, 1.48f),
+            new Color(0.48f, 0.57f, 0.60f), 1);
+        AddWorldPart(room, "LeftCabinetDoor", sprite, new Vector2(-1.72f, -2.02f), new Vector2(2.95f, 1.24f),
+            new Color(0.58f, 0.66f, 0.67f), 2);
+        AddWorldPart(room, "RightCabinetDoor", sprite, new Vector2(1.72f, -2.02f), new Vector2(2.95f, 1.24f),
+            new Color(0.58f, 0.66f, 0.67f), 2);
+        AddWorldPart(room, "CabinetCenterSeam", sprite, new Vector2(0f, -2.02f), new Vector2(0.045f, 1.2f),
+            new Color(0.31f, 0.40f, 0.43f), 3);
+        AddWorldPart(room, "LeftCabinetHandle", sprite, new Vector2(-0.35f, -2.02f), new Vector2(0.12f, 0.42f),
+            new Color(0.82f, 0.82f, 0.76f), 3);
+        AddWorldPart(room, "RightCabinetHandle", sprite, new Vector2(0.35f, -2.02f), new Vector2(0.12f, 0.42f),
+            new Color(0.82f, 0.82f, 0.76f), 3);
+        AddWorldPart(room, "SinkCountertop", sprite, new Vector2(0f, -1.25f), new Vector2(7.1f, 0.24f),
+            new Color(0.85f, 0.84f, 0.77f), 3);
+        AddWorldPart(room, "SinkBasinRim", sprite, new Vector2(0f, -1.10f), new Vector2(2.15f, 0.27f),
+            new Color(0.58f, 0.69f, 0.70f), 4);
+        AddWorldPart(room, "SinkBasin", sprite, new Vector2(0f, -1.08f), new Vector2(1.72f, 0.16f),
+            new Color(0.35f, 0.48f, 0.51f), 5);
+        AddWorldPart(room, "FaucetStem", sprite, new Vector2(0f, -0.83f), new Vector2(0.12f, 0.42f),
+            new Color(0.79f, 0.82f, 0.80f), 4);
+        AddWorldPart(room, "FaucetSpout", sprite, new Vector2(0.20f, -0.62f), new Vector2(0.48f, 0.10f),
+            new Color(0.79f, 0.82f, 0.80f), 4);
+        AddWorldPart(room, "BathMat", sprite, new Vector2(0f, -3.45f), new Vector2(3.8f, 0.38f),
+            new Color(0.46f, 0.62f, 0.62f), 1);
+
+        Transform toilet = new GameObject("BathroomToilet").transform;
+        toilet.SetParent(room, false);
+        toilet.localPosition = new Vector3(-6.6f, -3.0f, 0f);
+        AddWorldPart(toilet, "ToiletPedestal", sprite, new Vector2(0f, -0.18f), new Vector2(0.78f, 0.70f),
+            new Color(0.80f, 0.83f, 0.79f), 2);
+        AddWorldPart(toilet, "ToiletBowl", sprite, new Vector2(0f, 0.23f), new Vector2(1.48f, 0.62f),
+            new Color(0.88f, 0.88f, 0.81f), 3);
+        AddWorldPart(toilet, "ToiletSeat", sprite, new Vector2(0f, 0.48f), new Vector2(1.16f, 0.18f),
+            new Color(0.58f, 0.67f, 0.68f), 4);
+        AddWorldPart(toilet, "ToiletTank", sprite, new Vector2(0f, 1.14f), new Vector2(1.12f, 1.12f),
+            new Color(0.83f, 0.85f, 0.80f), 2);
+        AddWorldPart(toilet, "ToiletTankLid", sprite, new Vector2(0f, 1.73f), new Vector2(1.28f, 0.16f),
+            new Color(0.91f, 0.90f, 0.83f), 3);
+
+        AddWorldPart(room, "WindowFrame", sprite, new Vector2(-6.6f, 2.75f), new Vector2(2.65f, 1.95f),
+            new Color(0.79f, 0.82f, 0.77f), 1);
+        AddWorldPart(room, "WindowGlass", sprite, new Vector2(-6.6f, 2.75f), new Vector2(2.36f, 1.66f),
+            new Color(0.47f, 0.69f, 0.73f), 2);
+        AddWorldPart(room, "WindowCrossbar", sprite, new Vector2(-6.6f, 2.75f), new Vector2(0.08f, 1.66f),
+            new Color(0.83f, 0.84f, 0.78f), 3);
+        AddWorldPart(room, "WindowSill", sprite, new Vector2(-6.6f, 1.76f), new Vector2(2.85f, 0.16f),
+            new Color(0.86f, 0.85f, 0.78f), 3);
+
+        AddWorldPart(room, "WallCabinet", sprite, new Vector2(6.4f, 2.85f), new Vector2(2.45f, 1.8f),
+            new Color(0.72f, 0.75f, 0.69f), 1);
+        AddWorldPart(room, "WallCabinetDoorLeft", sprite, new Vector2(5.79f, 2.85f), new Vector2(1.10f, 1.55f),
+            new Color(0.84f, 0.83f, 0.75f), 2);
+        AddWorldPart(room, "WallCabinetDoorRight", sprite, new Vector2(7.01f, 2.85f), new Vector2(1.10f, 1.55f),
+            new Color(0.84f, 0.83f, 0.75f), 2);
+        AddWorldPart(room, "TowelRail", sprite, new Vector2(6.35f, 0.50f), new Vector2(2.25f, 0.10f),
+            new Color(0.77f, 0.81f, 0.78f), 3);
+        AddWorldPart(room, "Towel", sprite, new Vector2(6.35f, -0.15f), new Vector2(1.45f, 1.08f),
+            new Color(0.67f, 0.79f, 0.75f), 2);
+        AddWorldPart(room, "TowelStripe", sprite, new Vector2(6.35f, -0.48f), new Vector2(1.45f, 0.12f),
+            new Color(0.47f, 0.66f, 0.64f), 3);
+
+        AddWorldPart(room, "ShowerBack", sprite, new Vector2(11.0f, -1.55f), new Vector2(4.4f, 4.35f),
+            new Color(0.50f, 0.65f, 0.68f), 0);
+        AddWorldPart(room, "ShowerCurtain", sprite, new Vector2(10.2f, -1.55f), new Vector2(2.65f, 4.15f),
+            new Color(0.68f, 0.76f, 0.74f, 0.92f), 1);
+        AddWorldPart(room, "ShowerCurtainStripe", sprite, new Vector2(10.2f, -1.55f), new Vector2(0.12f, 4.15f),
+            new Color(0.49f, 0.65f, 0.66f), 2);
+        AddWorldPart(room, "ShowerRail", sprite, new Vector2(10.2f, 0.64f), new Vector2(3.2f, 0.12f),
+            new Color(0.79f, 0.82f, 0.79f), 3);
+    }
+
+    private void PlaceBathroomSequenceTargets()
+    {
+        if (deodorantTarget != null)
+            deodorantTarget.position = new Vector3(-1.25f, -0.455f, deodorantTarget.position.z);
+        if (mouthwashTarget != null)
+            mouthwashTarget.position = new Vector3(1.25f, -0.455f, mouthwashTarget.position.z);
+        if (mirrorTarget != null)
+            mirrorTarget.position = new Vector3(0f, 1.75f, mirrorTarget.position.z);
     }
 
     private static Transform FindTarget(string targetName)
@@ -507,86 +587,7 @@ public sealed class EyeGazeController : MonoBehaviour
         }
     }
 
-    private void RandomizeSequenceTargetPositions()
-    {
-        Transform[] targets = { deodorantTarget, mouthwashTarget, mirrorTarget };
-        float centerX = (leftCameraStart.x + rightCameraStart.x) * 0.5f;
-        float centerY = (leftCameraStart.y + rightCameraStart.y) * 0.5f;
-        float halfHeight = leftCamera != null ? leftCamera.orthographicSize : 5f;
-        float aspect = leftCamera != null && leftCamera.targetTexture != null
-            ? (float)leftCamera.targetTexture.width / leftCamera.targetTexture.height
-            : worldPanel != null ? worldPanel.rect.width / Mathf.Max(1f, worldPanel.rect.height) : 1f;
-        float halfWidth = halfHeight * aspect;
-        float roomHalfWidth = halfWidth + cameraTravel - 1.6f;
-        float roomHalfHeight = halfHeight + cameraTravel - 1.6f;
-        Vector2[] viewCenters =
-        {
-            new Vector2(leftCameraStart.x, leftCameraStart.y),
-            new Vector2(rightCameraStart.x, rightCameraStart.y),
-            new Vector2(leftCameraStart.x + leftAim.x * cameraTravel, leftCameraStart.y + leftAim.y * cameraTravel),
-            new Vector2(rightCameraStart.x + rightAim.x * cameraTravel, rightCameraStart.y + rightAim.y * cameraTravel)
-        };
-        Vector2[] placed = new Vector2[targets.Length];
-        int[] cornerOrder = { 0, 1, 2, 3 };
-        for (int i = 0; i < cornerOrder.Length; i++)
-        {
-            int swap = Random.Range(i, cornerOrder.Length);
-            (cornerOrder[i], cornerOrder[swap]) = (cornerOrder[swap], cornerOrder[i]);
-        }
 
-        for (int i = 0; i < targets.Length; i++)
-        {
-            if (targets[i] == null) continue;
-            int corner = cornerOrder[i];
-            float xSign = (corner == 0 || corner == 2) ? -1f : 1f;
-            float ySign = (corner < 2) ? -1f : 1f;
-            Vector2 candidate = Vector2.zero;
-            bool accepted = false;
-            for (int attempt = 0; attempt < 160; attempt++)
-            {
-                candidate = new Vector2(
-                    centerX + xSign * Random.Range(roomHalfWidth - 0.7f, roomHalfWidth),
-                    centerY + ySign * Random.Range(roomHalfHeight - 0.7f, roomHalfHeight));
-
-                bool insideAnyStartingView = false;
-                foreach (Vector2 viewCenter in viewCenters)
-                {
-                    bool insidePaddedView = Mathf.Abs(candidate.x - viewCenter.x) <= halfWidth + 1f &&
-                        Mathf.Abs(candidate.y - viewCenter.y) <= halfHeight + 1f;
-                    if (insidePaddedView)
-                    {
-                        insideAnyStartingView = true;
-                        break;
-                    }
-                }
-
-                bool tooCloseToEarlierTarget = false;
-                for (int previous = 0; previous < i; previous++)
-                {
-                    if (Vector2.Distance(candidate, placed[previous]) < 8f)
-                    {
-                        tooCloseToEarlierTarget = true;
-                        break;
-                    }
-                }
-
-                if (!insideAnyStartingView && !tooCloseToEarlierTarget)
-                {
-                    accepted = true;
-                    break;
-                }
-            }
-
-            if (!accepted)
-            {
-                candidate = new Vector2(centerX + xSign * roomHalfWidth, centerY + ySign * roomHalfHeight);
-            }
-
-            placed[i] = candidate;
-            Vector3 oldPosition = targets[i].position;
-            targets[i].position = new Vector3(candidate.x, candidate.y, oldPosition.z);
-        }
-    }
 
 
     private void UpdateEyeFocusFeedback(Vector2 screenPointer)
