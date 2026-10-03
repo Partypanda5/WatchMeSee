@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -32,6 +33,10 @@ public sealed class EyeGazeController : MonoBehaviour
     [Header("Tuning")]
     [SerializeField, Range(0f, 30f)] private float pupilTravel = 14f;
     [SerializeField, Range(0f, 12f)] private float cameraTravel = 8f;
+    [SerializeField, Range(0f, 45f)] private float cameraAimRotationDegrees = 28f;
+    [SerializeField, Range(0f, 0.8f)] private float fisheyeStrength = 0.45f;
+    [SerializeField, Range(0f, 1f)] private float maximumMisalignmentBlur = 1f;
+    [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 12f;
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
@@ -60,9 +65,14 @@ public sealed class EyeGazeController : MonoBehaviour
     private Transform lockedFocusTarget;
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
+    private Quaternion leftCameraStartRotation;
+    private Quaternion rightCameraStartRotation;
     private Vector2 leftPupilStart;
     private Vector2 rightPupilStart;
     private Color rightImageColor;
+    private readonly List<RawImage> fisheyeImages = new List<RawImage>();
+    private readonly List<Material> originalFisheyeMaterials = new List<Material>();
+    private readonly List<Material> runtimeFisheyeMaterials = new List<Material>();
     private Image leftEyeImage;
     private Image rightEyeImage;
     private Color leftEyeBaseColor;
@@ -76,8 +86,16 @@ public sealed class EyeGazeController : MonoBehaviour
     private void Awake()
     {
         CleanPlaceholderVisuals();
-        if (leftCamera != null) leftCameraStart = leftCamera.transform.position;
-        if (rightCamera != null) rightCameraStart = rightCamera.transform.position;
+        if (leftCamera != null)
+        {
+            leftCameraStart = leftCamera.transform.position;
+            leftCameraStartRotation = leftCamera.transform.rotation;
+        }
+        if (rightCamera != null)
+        {
+            rightCameraStart = rightCamera.transform.position;
+            rightCameraStartRotation = rightCamera.transform.rotation;
+        }
         if (leftPupil != null) leftPupilStart = leftPupil.anchoredPosition;
         if (leftEyeRect != null) leftEyeImage = leftEyeRect.GetComponent<Image>();
         if (rightEyeRect != null) rightEyeImage = rightEyeRect.GetComponent<Image>();
@@ -85,6 +103,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (rightEyeImage != null) rightEyeBaseColor = rightEyeImage.color;
         if (rightPupil != null) rightPupilStart = rightPupil.anchoredPosition;
         if (rightEyeView != null) rightImageColor = rightEyeView.color;
+        SetupFisheyeEffect();
 
         leftAim = RandomStartingAim();
         rightAim = RandomStartingAim();
@@ -393,6 +412,38 @@ public sealed class EyeGazeController : MonoBehaviour
     private void OnDestroy()
     {
         if (characterEyes != null) characterEyes.DragStarted -= OnCharacterDragStarted;
+        for (int i = 0; i < fisheyeImages.Count; i++)
+        {
+            if (fisheyeImages[i] != null)
+                fisheyeImages[i].material = originalFisheyeMaterials[i];
+            if (runtimeFisheyeMaterials[i] != null)
+                Destroy(runtimeFisheyeMaterials[i]);
+        }
+    }
+
+    private void SetupFisheyeEffect()
+    {
+        if (worldPanel == null) return;
+
+        Shader fisheyeShader = Resources.Load<Shader>("RightEyeFisheye");
+        if (fisheyeShader == null)
+        {
+            Debug.LogWarning("Could not find the right-panel fisheye shader.");
+            return;
+        }
+
+        RawImage[] worldImages = worldPanel.GetComponentsInChildren<RawImage>(true);
+        foreach (RawImage image in worldImages)
+        {
+            if (image == null || !(image.texture is RenderTexture)) continue;
+            Material fisheyeMaterial = new Material(fisheyeShader);
+            fisheyeMaterial.SetFloat("_FisheyeStrength", fisheyeStrength);
+            fisheyeMaterial.SetFloat("_BlurRadiusPixels", maximumBlurRadiusPixels);
+            fisheyeImages.Add(image);
+            originalFisheyeMaterials.Add(image.material);
+            runtimeFisheyeMaterials.Add(fisheyeMaterial);
+            image.material = fisheyeMaterial;
+        }
     }
 
     // Grabbing an eye on the sprite face exits focus, same as grabbing a UI eye.
@@ -484,15 +535,33 @@ public sealed class EyeGazeController : MonoBehaviour
         Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
         Vector3 wantedLeftCamera = focused && cameraFocusTarget != null
             ? new Vector3(cameraFocusTarget.position.x, cameraFocusTarget.position.y, leftCameraStart.z)
-            : leftCameraStart + new Vector3(leftAim.x * cameraTravel, leftAim.y * cameraTravel, 0f);
+            : leftCameraStart;
         Vector3 wantedRightCamera = focused && cameraFocusTarget != null
             ? new Vector3(cameraFocusTarget.position.x, cameraFocusTarget.position.y, rightCameraStart.z)
-            : rightCameraStart + new Vector3(rightAim.x * cameraTravel, rightAim.y * cameraTravel, 0f);
+            : rightCameraStart;
+
+        Quaternion wantedLeftRotation = focused
+            ? leftCameraStartRotation
+            : leftCameraStartRotation * Quaternion.Euler(
+                -leftAim.y * cameraAimRotationDegrees,
+                leftAim.x * cameraAimRotationDegrees,
+                0f);
+        Quaternion wantedRightRotation = focused
+            ? rightCameraStartRotation
+            : rightCameraStartRotation * Quaternion.Euler(
+                -rightAim.y * cameraAimRotationDegrees,
+                rightAim.x * cameraAimRotationDegrees,
+                0f);
 
         leftCamera.transform.position = Vector3.Lerp(
             leftCamera.transform.position, wantedLeftCamera, Time.deltaTime * followSpeed);
         rightCamera.transform.position = Vector3.Lerp(
             rightCamera.transform.position, wantedRightCamera, Time.deltaTime * followSpeed);
+        leftCamera.transform.rotation = Quaternion.Slerp(
+            leftCamera.transform.rotation, wantedLeftRotation, Time.deltaTime * followSpeed);
+        rightCamera.transform.rotation = Quaternion.Slerp(
+            rightCamera.transform.rotation, wantedRightRotation, Time.deltaTime * followSpeed);
+        UpdateFocusBlur();
 
         if (rightEyeView != null)
         {
@@ -642,6 +711,9 @@ public sealed class EyeGazeController : MonoBehaviour
             Rect panelRect = worldPanel.rect;
             float u = Mathf.InverseLerp(panelRect.xMin, panelRect.xMax, local.x);
             float v = Mathf.InverseLerp(panelRect.yMin, panelRect.yMax, local.y);
+            Vector2 sourceUv = FisheyeOutputToSourceUv(new Vector2(u, v));
+            u = sourceUv.x;
+            v = sourceUv.y;
             leftOnTarget = IsTargetUnderPointer(leftCamera, target, u, v);
             rightOnTarget = IsTargetUnderPointer(rightCamera, target, u, v);
         }
@@ -720,12 +792,117 @@ public sealed class EyeGazeController : MonoBehaviour
         Rect panelRect = worldPanel.rect;
         float u = Mathf.InverseLerp(panelRect.xMin, panelRect.xMax, local.x);
         float v = Mathf.InverseLerp(panelRect.yMin, panelRect.yMax, local.y);
+        Vector2 sourceUv = FisheyeOutputToSourceUv(new Vector2(u, v));
+        u = sourceUv.x;
+        v = sourceUv.y;
 
         // The target views can be close without requiring pixel-perfect convergence.
         if (!IsEyeTargetAligned(target)) return false;
 
         // The click must land on the target in both eye views.
         return IsTargetUnderPointer(leftCamera, target, u, v) && IsTargetUnderPointer(rightCamera, target, u, v);
+    }
+
+    private Vector2 FisheyeOutputToSourceUv(Vector2 outputUv)
+    {
+        float strength = Mathf.Clamp(fisheyeStrength, 0f, 0.8f);
+        if (strength <= 0.0001f) return outputUv;
+
+        Vector2 centered = outputUv * 2f - Vector2.one;
+        float radiusSquared = centered.sqrMagnitude * 0.5f;
+        return centered / (1f + strength * radiusSquared) * 0.5f + Vector2.one * 0.5f;
+    }
+
+    private Vector2 FisheyeSourceToOutputUv(Vector2 sourceUv)
+    {
+        float strength = Mathf.Clamp(fisheyeStrength, 0f, 0.8f);
+        if (strength <= 0.0001f) return sourceUv;
+
+        Vector2 centered = sourceUv * 2f - Vector2.one;
+        float sourceRadius = centered.magnitude;
+        if (sourceRadius <= 0.0001f) return sourceUv;
+
+        float discriminant = Mathf.Max(0f, 1f - 2f * strength * sourceRadius * sourceRadius);
+        float outputRadius = (2f * sourceRadius) / (1f + Mathf.Sqrt(discriminant));
+        return centered * (outputRadius / sourceRadius) * 0.5f + Vector2.one * 0.5f;
+    }
+
+    private void UpdateFocusBlur()
+    {
+        Transform target = focused && lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
+        float blurAmount = 0f;
+        if (target != null)
+        {
+            Vector3 leftView = leftCamera.WorldToViewportPoint(target.position);
+            Vector3 rightView = rightCamera.WorldToViewportPoint(target.position);
+            if (leftView.z <= 0f || rightView.z <= 0f ||
+                !IsTargetCenterVisible(leftCamera, target) || !IsTargetCenterVisible(rightCamera, target))
+            {
+                blurAmount = maximumMisalignmentBlur;
+            }
+            else
+            {
+                Vector2 pixelSeparation = new Vector2(
+                    (leftView.x - rightView.x) * worldPanel.rect.width,
+                    (leftView.y - rightView.y) * worldPanel.rect.height);
+                float alignmentError = Mathf.InverseLerp(
+                    0f, Mathf.Max(1f, focusAlignmentTolerancePixels * 1.5f), pixelSeparation.magnitude);
+                blurAmount = Mathf.SmoothStep(0f, maximumMisalignmentBlur, alignmentError);
+            }
+        }
+
+        for (int i = 0; i < fisheyeImages.Count; i++)
+        {
+            if (fisheyeImages[i] == null || runtimeFisheyeMaterials[i] == null) continue;
+            Camera eyeCamera = fisheyeImages[i] == rightEyeView ? rightCamera : leftCamera;
+            SetFocusBlurForCamera(runtimeFisheyeMaterials[i], eyeCamera, target, blurAmount);
+        }
+    }
+
+    private void SetFocusBlurForCamera(Material material, Camera eyeCamera, Transform target, float blurAmount)
+    {
+        material.SetFloat("_BlurStrength", blurAmount);
+        if (target == null)
+        {
+            material.SetVector("_FocusCenter", new Vector4(-10f, -10f, 0f, 0f));
+            material.SetFloat("_FocusRadius", 0f);
+            material.SetFloat("_FocusFeather", 0f);
+            return;
+        }
+
+        Vector3 centerView = eyeCamera.WorldToViewportPoint(target.position);
+        if (centerView.z <= 0f)
+        {
+            material.SetVector("_FocusCenter", new Vector4(-10f, -10f, 0f, 0f));
+            material.SetFloat("_FocusRadius", 0f);
+            material.SetFloat("_FocusFeather", 0f);
+            return;
+        }
+
+        Vector2 focusCenter = FisheyeSourceToOutputUv(new Vector2(centerView.x, centerView.y));
+        float focusRadius = 0.035f;
+        foreach (SpriteRenderer spriteRenderer in target.GetComponentsInChildren<SpriteRenderer>())
+        {
+            Bounds bounds = spriteRenderer.bounds;
+            for (int x = 0; x < 2; x++)
+            for (int y = 0; y < 2; y++)
+            for (int z = 0; z < 2; z++)
+            {
+                Vector3 corner = new Vector3(
+                    x == 0 ? bounds.min.x : bounds.max.x,
+                    y == 0 ? bounds.min.y : bounds.max.y,
+                    z == 0 ? bounds.min.z : bounds.max.z);
+                Vector3 cornerView = eyeCamera.WorldToViewportPoint(corner);
+                if (cornerView.z <= 0f) continue;
+                Vector2 cornerOutput = FisheyeSourceToOutputUv(new Vector2(cornerView.x, cornerView.y));
+                focusRadius = Mathf.Max(focusRadius, Vector2.Distance(focusCenter, cornerOutput));
+            }
+        }
+
+        focusRadius = Mathf.Clamp(focusRadius, 0.035f, 0.3f);
+        material.SetVector("_FocusCenter", new Vector4(focusCenter.x, focusCenter.y, 0f, 0f));
+        material.SetFloat("_FocusRadius", focusRadius);
+        material.SetFloat("_FocusFeather", focusRadius * 1.5f + 0.02f);
     }
 
     private bool IsTargetUnderPointer(Camera eyeCamera, Transform target, float u, float v)
