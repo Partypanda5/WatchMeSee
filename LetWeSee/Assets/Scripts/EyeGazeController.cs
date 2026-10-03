@@ -32,7 +32,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 24f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
-    [SerializeField, Range(0.1f, 1f)] private float eyeAimSensitivity = 0.5f;
+    [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
+    [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.2f;
     [SerializeField, Range(0f, 1f)] private float startingEyeAimRange = 0.7f;
     [SerializeField] private Vector2 focusTargetRandomRange = new Vector2(2.5f, 1.6f);
 
@@ -430,8 +431,17 @@ public sealed class EyeGazeController : MonoBehaviour
         float x = Mathf.Max(1f, eye.rect.width * 0.5f);
         float y = Mathf.Max(1f, eye.rect.height * 0.5f);
         return new Vector2(
-            Mathf.Clamp(local.x / x * eyeAimSensitivity, -1f, 1f),
-            Mathf.Clamp(local.y / y * eyeAimSensitivity, -1f, 1f));
+            Mathf.Clamp(local.x / x * CurrentEyeAimSensitivity, -1f, 1f),
+            Mathf.Clamp(local.y / y * CurrentEyeAimSensitivity, -1f, 1f));
+    }
+
+    private float CurrentEyeAimSensitivity
+    {
+        get
+        {
+            bool activelyDraggingEye = draggedEye != DraggedEye.None && eyeDrag != null && eyeDrag.IsPressed();
+            return activelyDraggingEye ? draggingEyeAimSensitivity : normalEyeAimSensitivity;
+        }
     }
 
     private Transform CurrentFocusTarget
@@ -621,19 +631,54 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private bool IsTargetUnderPointer(Camera eyeCamera, Transform target, float u, float v)
     {
-        Vector3 targetView = eyeCamera.WorldToViewportPoint(target.position);
-        if (targetView.z <= 0f || targetView.x < 0f || targetView.x > 1f || targetView.y < 0f || targetView.y > 1f)
-            return false;
-        float orthoHeight = eyeCamera.orthographicSize * 2f;
-        float aspect = eyeCamera.targetTexture != null
-            ? (float)eyeCamera.targetTexture.width / eyeCamera.targetTexture.height
-            : (float)worldPanel.rect.width / Mathf.Max(1f, worldPanel.rect.height);
-        Vector3 cameraPosition = eyeCamera.transform.position;
-        Vector2 clickedWorldPoint = new Vector2(
-            cameraPosition.x + (u - 0.5f) * orthoHeight * aspect,
-            cameraPosition.y + (v - 0.5f) * orthoHeight);
+        if (u < 0f || u > 1f || v < 0f || v > 1f) return false;
 
-        return Vector2.Distance(clickedWorldPoint, target.position) <= focusHitRadius;
+        SpriteRenderer[] renderers = target.GetComponentsInChildren<SpriteRenderer>();
+        if (renderers.Length == 0)
+        {
+            Vector3 targetView = eyeCamera.WorldToViewportPoint(target.position);
+            if (targetView.z <= 0f || targetView.x < 0f || targetView.x > 1f || targetView.y < 0f || targetView.y > 1f)
+                return false;
+
+            float radiusU = focusHitRadius / (2f * eyeCamera.orthographicSize * Mathf.Max(0.01f, eyeCamera.aspect));
+            float radiusV = focusHitRadius / (2f * eyeCamera.orthographicSize);
+            return Mathf.Abs(targetView.x - u) <= radiusU && Mathf.Abs(targetView.y - v) <= radiusV;
+        }
+
+        float minU = float.PositiveInfinity;
+        float maxU = float.NegativeInfinity;
+        float minV = float.PositiveInfinity;
+        float maxV = float.NegativeInfinity;
+        bool anyVisibleInFront = false;
+
+        foreach (SpriteRenderer spriteRenderer in renderers)
+        {
+            Bounds bounds = spriteRenderer.bounds;
+            for (int x = 0; x < 2; x++)
+            for (int y = 0; y < 2; y++)
+            for (int z = 0; z < 2; z++)
+            {
+                Vector3 corner = new Vector3(
+                    x == 0 ? bounds.min.x : bounds.max.x,
+                    y == 0 ? bounds.min.y : bounds.max.y,
+                    z == 0 ? bounds.min.z : bounds.max.z);
+                Vector3 viewport = eyeCamera.WorldToViewportPoint(corner);
+                if (viewport.z <= 0f) continue;
+
+                anyVisibleInFront = true;
+                minU = Mathf.Min(minU, viewport.x);
+                maxU = Mathf.Max(maxU, viewport.x);
+                minV = Mathf.Min(minV, viewport.y);
+                maxV = Mathf.Max(maxV, viewport.y);
+            }
+        }
+
+        if (!anyVisibleInFront) return false;
+
+        float paddingU = focusHitRadius / (2f * eyeCamera.orthographicSize * Mathf.Max(0.01f, eyeCamera.aspect));
+        float paddingV = focusHitRadius / (2f * eyeCamera.orthographicSize);
+        return u >= minU - paddingU && u <= maxU + paddingU &&
+            v >= minV - paddingV && v <= maxV + paddingV;
     }
 }
 
