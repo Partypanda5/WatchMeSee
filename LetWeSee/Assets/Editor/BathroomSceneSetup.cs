@@ -180,3 +180,263 @@ public static class BathroomSceneSetup
         if (go != null) Object.DestroyImmediate(go);
     }
 }
+
+[InitializeOnLoad]
+public static class ArmPlaceholderSetupOnce
+{
+    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string HookPath = "Assets/Editor/ArmPlaceholderSetupOnce.cs";
+    private const string CompletedKey = "WatchMeSee.ArmPlaceholderSetupCompleted";
+
+    static ArmPlaceholderSetupOnce()
+    {
+        EditorApplication.delayCall += Run;
+    }
+
+    [MenuItem("Watch Me See/Setup Arm Placeholder")]
+    public static void SetupFromMenu() => Run();
+
+    private static void Run()
+    {
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            var openScene = SceneManager.GetSceneAt(i);
+            if (openScene.isDirty)
+            {
+                Debug.LogWarning("Arm placeholder setup paused because an open scene has unsaved changes. Save it, then use Watch Me See > Setup Arm Placeholder.");
+                return;
+            }
+        }
+
+        var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        var panelObject = GameObject.Find("LeftPanel");
+        var controller = Object.FindFirstObjectByType<EyeGazeController>();
+        if (panelObject == null || controller == null)
+        {
+            Debug.LogError("Could not find LeftPanel or EyeGazeController in SampleScene.");
+            return;
+        }
+
+        var panel = panelObject.GetComponent<RectTransform>();
+        var oldArm = panel.Find("ArmPlaceholder");
+        if (oldArm != null) Object.DestroyImmediate(oldArm.gameObject);
+
+        var sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        var arm = MakeImage("ArmPlaceholder", panel, sprite, new Color(0.68f, 0.43f, 0.34f, 1f));
+        var armRect = arm.rectTransform;
+        armRect.anchorMin = armRect.anchorMax = new Vector2(0.5f, 0.5f);
+        armRect.pivot = new Vector2(0.5f, 0f);
+        armRect.sizeDelta = new Vector2(52f, 250f);
+        armRect.anchoredPosition = new Vector2(panel.rect.xMin + panel.rect.width * 0.16f, panel.rect.yMin + panel.rect.height * 0.08f);
+        armRect.SetAsFirstSibling();
+
+        var hand = MakeImage("HandPlaceholder", panel, sprite, new Color(0.82f, 0.59f, 0.47f, 1f));
+        var handRect = hand.rectTransform;
+        handRect.anchorMin = handRect.anchorMax = new Vector2(0.5f, 0.5f);
+        handRect.pivot = new Vector2(0.5f, 0.5f);
+        handRect.sizeDelta = new Vector2(78f, 66f);
+        handRect.anchoredPosition = armRect.anchoredPosition + new Vector2(0f, 200f);
+
+        AddChildShape("FingerIndex", handRect, sprite, new Vector2(-19f, 29f), new Vector2(19f, 40f), new Color(0.86f, 0.63f, 0.51f, 1f));
+        AddChildShape("FingerMiddle", handRect, sprite, new Vector2(0f, 33f), new Vector2(19f, 46f), new Color(0.86f, 0.63f, 0.51f, 1f));
+        AddChildShape("FingerRing", handRect, sprite, new Vector2(19f, 27f), new Vector2(18f, 36f), new Color(0.82f, 0.59f, 0.47f, 1f));
+        AddChildShape("Thumb", handRect, sprite, new Vector2(-35f, -1f), new Vector2(34f, 19f), new Color(0.82f, 0.59f, 0.47f, 1f), -32f);
+        handRect.SetAsLastSibling();
+
+        var serialized = new SerializedObject(controller);
+        serialized.FindProperty("leftPanel").objectReferenceValue = panel;
+        serialized.FindProperty("armVisual").objectReferenceValue = armRect;
+        serialized.FindProperty("handVisual").objectReferenceValue = handRect;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, ScenePath);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.DeleteAsset(HookPath);
+        Debug.Log("Added the mouse-following arm and hand placeholder to the SampleScene left panel.");
+    }
+
+    private static Image MakeImage(string name, Transform parent, Sprite sprite, Color color)
+    {
+        var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        go.transform.SetParent(parent, false);
+        var image = go.GetComponent<Image>();
+        image.sprite = sprite;
+        image.color = color;
+        image.raycastTarget = false;
+        return image;
+    }
+
+    private static void AddChildShape(string name, RectTransform parent, Sprite sprite, Vector2 position, Vector2 size, Color color, float angle = 0f)
+    {
+        var image = MakeImage(name, parent, sprite, color);
+        var rect = image.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
+        rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+    }
+}
+
+
+[InitializeOnLoad]
+public static class WorldPanelClipSetupOnce
+{
+    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string CompletedKey = "WatchMeSee.WorldPanelClipSetupCompleted";
+
+    static WorldPanelClipSetupOnce()
+    {
+        EditorApplication.delayCall += Run;
+        EditorApplication.playModeStateChanged += state =>
+        {
+            if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Run;
+        };
+    }
+
+    [MenuItem("Watch Me See/Clip World Panel Contents")]
+    public static void SetupFromMenu() => Run();
+
+    private static void Run()
+    {
+        if (EditorPrefs.GetBool(CompletedKey, false) || EditorApplication.isPlayingOrWillChangePlaymode) return;
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            var openScene = SceneManager.GetSceneAt(i);
+            if (openScene.isDirty)
+            {
+                Debug.LogWarning("World panel clip setup paused because an open scene has unsaved changes. Save it, then use Watch Me See > Clip World Panel Contents.");
+                return;
+            }
+        }
+
+        var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        var worldPanel = GameObject.Find("WorldPanel");
+        if (worldPanel == null)
+        {
+            Debug.LogError("Could not find WorldPanel in SampleScene.");
+            return;
+        }
+
+        if (worldPanel.GetComponent<RectMask2D>() == null)
+            worldPanel.AddComponent<RectMask2D>();
+        foreach (var image in worldPanel.GetComponentsInChildren<RawImage>(true))
+            image.raycastTarget = false;
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, ScenePath);
+        EditorPrefs.SetBool(CompletedKey, true);
+        AssetDatabase.SaveAssets();
+        Debug.Log("WorldPanel now clips both eye views to its bounds.");
+    }
+}
+
+[InitializeOnLoad]
+public static class CleanupHandPlaceholdersOnce
+{
+    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string CompletedKey = "WatchMeSee.CleanupHandPlaceholdersCompleted";
+
+    static CleanupHandPlaceholdersOnce()
+    {
+        EditorApplication.delayCall += Run;
+        EditorApplication.playModeStateChanged += state =>
+        {
+            if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Run;
+        };
+    }
+
+    [MenuItem("Watch Me See/Clean Up Hand Placeholder")]
+    public static void SetupFromMenu() => Run();
+
+    private static void Run()
+    {
+        if (EditorPrefs.GetBool(CompletedKey, false) || EditorApplication.isPlayingOrWillChangePlaymode) return;
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            var openScene = SceneManager.GetSceneAt(i);
+            if (openScene.isDirty)
+            {
+                Debug.LogWarning("Hand placeholder cleanup paused because an open scene has unsaved changes. Save it, then use Watch Me See > Clean Up Hand Placeholder.");
+                return;
+            }
+        }
+
+        var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        var panelObject = GameObject.Find("LeftPanel");
+        var controller = Object.FindAnyObjectByType<EyeGazeController>();
+        if (panelObject == null || controller == null)
+        {
+            Debug.LogError("Could not find LeftPanel or EyeGazeController in SampleScene.");
+            return;
+        }
+
+        var panel = panelObject.GetComponent<RectTransform>();
+        for (int i = panel.childCount - 1; i >= 0; i--)
+        {
+            var child = panel.GetChild(i);
+            if (child.name == "ArmPlaceholder" || child.name == "HandPlaceholder" ||
+                child.name == "FingerIndex" || child.name == "FingerMiddle" ||
+                child.name == "FingerRing" || child.name == "Thumb")
+                Object.DestroyImmediate(child.gameObject);
+        }
+
+        if (panelObject.GetComponent<RectMask2D>() == null)
+            panelObject.AddComponent<RectMask2D>();
+
+        var sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        var arm = MakeImage("ArmPlaceholder", panel, sprite, new Color(0.68f, 0.43f, 0.34f, 1f));
+        var armRect = arm.rectTransform;
+        armRect.anchorMin = armRect.anchorMax = new Vector2(0.5f, 0.5f);
+        armRect.pivot = new Vector2(0.5f, 0f);
+        armRect.sizeDelta = new Vector2(52f, 250f);
+        armRect.anchoredPosition = new Vector2(panel.rect.xMin + panel.rect.width * 0.16f, panel.rect.yMin + panel.rect.height * 0.08f);
+        armRect.SetAsFirstSibling();
+
+        var hand = MakeImage("HandPlaceholder", panel, sprite, new Color(0.82f, 0.59f, 0.47f, 1f));
+        var handRect = hand.rectTransform;
+        handRect.anchorMin = handRect.anchorMax = new Vector2(0.5f, 0.5f);
+        handRect.pivot = new Vector2(0.5f, 0.5f);
+        handRect.sizeDelta = new Vector2(78f, 66f);
+        handRect.anchoredPosition = armRect.anchoredPosition + new Vector2(0f, 200f);
+        AddShape("FingerIndex", handRect, sprite, new Vector2(-19f, 29f), new Vector2(19f, 40f), new Color(0.86f, 0.63f, 0.51f, 1f));
+        AddShape("FingerMiddle", handRect, sprite, new Vector2(0f, 33f), new Vector2(19f, 46f), new Color(0.86f, 0.63f, 0.51f, 1f));
+        AddShape("FingerRing", handRect, sprite, new Vector2(19f, 27f), new Vector2(18f, 36f), new Color(0.82f, 0.59f, 0.47f, 1f));
+        AddShape("Thumb", handRect, sprite, new Vector2(-35f, -1f), new Vector2(34f, 19f), new Color(0.82f, 0.59f, 0.47f, 1f), -32f);
+        handRect.SetAsLastSibling();
+
+        var serialized = new SerializedObject(controller);
+        serialized.FindProperty("leftPanel").objectReferenceValue = panel;
+        serialized.FindProperty("armVisual").objectReferenceValue = armRect;
+        serialized.FindProperty("handVisual").objectReferenceValue = handRect;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, ScenePath);
+        AssetDatabase.SaveAssets();
+        EditorPrefs.SetBool(CompletedKey, true);
+        Debug.Log("Removed duplicate hand placeholders, added a left-panel clip, and saved one hand/arm pair.");
+    }
+
+    private static Image MakeImage(string name, Transform parent, Sprite sprite, Color color)
+    {
+        var go = new GameObject(name, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        go.transform.SetParent(parent, false);
+        var image = go.GetComponent<Image>();
+        image.sprite = sprite;
+        image.color = color;
+        image.raycastTarget = false;
+        return image;
+    }
+
+    private static void AddShape(string name, RectTransform parent, Sprite sprite, Vector2 position, Vector2 size, Color color, float angle = 0f)
+    {
+        var image = MakeImage(name, parent, sprite, color);
+        var rect = image.rectTransform;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f, 0.5f);
+        rect.sizeDelta = size;
+        rect.anchoredPosition = position;
+        rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+    }
+}

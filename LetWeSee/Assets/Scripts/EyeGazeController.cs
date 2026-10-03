@@ -12,6 +12,9 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private RectTransform rightEyeRect;
     [SerializeField] private RectTransform leftPupil;
     [SerializeField] private RectTransform rightPupil;
+    [SerializeField] private RectTransform leftPanel;
+    [SerializeField] private RectTransform armVisual;
+    [SerializeField] private RectTransform handVisual;
 
     [Header("World panel")]
     [SerializeField] private RectTransform worldPanel;
@@ -24,6 +27,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0f, 30f)] private float pupilTravel = 14f;
     [SerializeField, Range(0f, 1.5f)] private float cameraTravel = 0.45f;
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
+    [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 24f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
     [SerializeField, Range(0f, 1f)] private float startingEyeAimRange = 0.7f;
     [SerializeField] private Vector2 focusTargetRandomRange = new Vector2(2.5f, 1.6f);
@@ -44,11 +48,14 @@ public sealed class EyeGazeController : MonoBehaviour
     private Vector2 leftPupilStart;
     private Vector2 rightPupilStart;
     private Color rightImageColor;
+    private bool previousCursorVisible;
+    private CursorLockMode previousCursorLockState;
     private const float DoubleVisionAlpha = 0.48f;
     private const float FocusAlpha = 0.08f;
 
     private void Awake()
     {
+        CleanPlaceholderVisuals();
         if (leftCamera != null) leftCameraStart = leftCamera.transform.position;
         if (rightCamera != null) rightCameraStart = rightCamera.transform.position;
         if (leftPupil != null) leftPupilStart = leftPupil.anchoredPosition;
@@ -77,15 +84,56 @@ public sealed class EyeGazeController : MonoBehaviour
         focusClick = eyeMap.FindAction("FocusClick", true);
     }
 
+
+    private void CleanPlaceholderVisuals()
+    {
+        if (leftPanel == null) return;
+
+        // Old editor setup passes could leave extra hand objects outside the controller references.
+        for (int i = leftPanel.childCount - 1; i >= 0; i--)
+        {
+            Transform child = leftPanel.GetChild(i);
+            bool duplicateArm = child.name == "ArmPlaceholder" &&
+                (armVisual == null || child != armVisual);
+            bool duplicateHand = child.name == "HandPlaceholder" &&
+                (handVisual == null || child != handVisual);
+            bool orphanedFinger = child.name == "FingerIndex" || child.name == "FingerMiddle" ||
+                child.name == "FingerRing" || child.name == "Thumb";
+
+            if (duplicateArm || duplicateHand || orphanedFinger)
+            {
+                child.gameObject.SetActive(false);
+                Destroy(child.gameObject);
+            }
+        }
+
+        // Clip the arm and hand at the face-panel edge so they cannot bleed into the world view.
+        if (leftPanel.GetComponent<RectMask2D>() == null)
+            leftPanel.gameObject.AddComponent<RectMask2D>();
+    }
+
     private void OnEnable()
     {
         if (eyeMap != null) eyeMap.Enable();
+
+        if (Application.isPlaying)
+        {
+            previousCursorVisible = Cursor.visible;
+            previousCursorLockState = Cursor.lockState;
+            Cursor.lockState = CursorLockMode.None;
+        }
     }
 
     private void OnDisable()
     {
         if (eyeMap != null) eyeMap.Disable();
         draggedEye = DraggedEye.None;
+
+        if (Application.isPlaying)
+        {
+            Cursor.visible = previousCursorVisible;
+            Cursor.lockState = previousCursorLockState;
+        }
     }
 
     private void Update()
@@ -96,6 +144,9 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+        bool overLeftPanel = leftPanel != null && RectTransformUtility.RectangleContainsScreenPoint(leftPanel, pointer, null);
+        Cursor.visible = !overLeftPanel;
+        UpdateArm(pointer, overLeftPanel);
         bool overFace = pointer.x < Screen.width * 0.4f;
 
         // Choose the eye once, on mouse-down. Keep that choice until mouse-up.
@@ -161,6 +212,36 @@ public sealed class EyeGazeController : MonoBehaviour
         }
     }
 
+    private void UpdateArm(Vector2 screenPointer, bool overLeftPanel)
+    {
+        if (armVisual == null || handVisual == null) return;
+        armVisual.gameObject.SetActive(overLeftPanel);
+        handVisual.gameObject.SetActive(overLeftPanel);
+        if (!overLeftPanel || leftPanel == null ||
+            !RectTransformUtility.ScreenPointToLocalPointInRectangle(leftPanel, screenPointer, null, out Vector2 local))
+            return;
+
+        Rect panelBounds = leftPanel.rect;
+        float handHalfWidth = handVisual.rect.width * 0.5f;
+        float handHalfHeight = handVisual.rect.height * 0.5f;
+        local.x = Mathf.Clamp(local.x, panelBounds.xMin + handHalfWidth, panelBounds.xMax - handHalfWidth);
+        local.y = Mathf.Clamp(local.y, panelBounds.yMin + handHalfHeight, panelBounds.yMax - handHalfHeight);
+
+        Vector2 armBase = new Vector2(
+            panelBounds.xMin + panelBounds.width * 0.16f,
+            panelBounds.yMin + panelBounds.height * 0.08f);
+        Vector2 direction = local - armBase;
+        float length = Mathf.Max(1f, direction.magnitude);
+
+        armVisual.anchoredPosition = armBase;
+        armVisual.sizeDelta = new Vector2(52f, length);
+        armVisual.localRotation = Quaternion.Euler(
+            0f, 0f, Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg - 90f);
+
+        handVisual.anchoredPosition = local;
+        handVisual.localRotation = Quaternion.identity;
+    }
+
     private Vector2 RandomStartingAim()
     {
         return new Vector2(
@@ -188,8 +269,17 @@ public sealed class EyeGazeController : MonoBehaviour
         float u = Mathf.InverseLerp(panelRect.xMin, panelRect.xMax, local.x);
         float v = Mathf.InverseLerp(panelRect.yMin, panelRect.yMax, local.y);
 
-        // The target can be selected from either eye's offset image.
-        return IsTargetUnderPointer(leftCamera, u, v) || IsTargetUnderPointer(rightCamera, u, v);
+        // Only allow focus when the two eye images of the target have converged.
+        Vector3 leftTargetView = leftCamera.WorldToViewportPoint(focusTarget.position);
+        Vector3 rightTargetView = rightCamera.WorldToViewportPoint(focusTarget.position);
+        Vector2 targetImageSeparation = new Vector2(
+            (leftTargetView.x - rightTargetView.x) * worldPanel.rect.width,
+            (leftTargetView.y - rightTargetView.y) * worldPanel.rect.height);
+        if (targetImageSeparation.magnitude > focusAlignmentTolerancePixels)
+            return false;
+
+        // The click must land on the target in both eye views.
+        return IsTargetUnderPointer(leftCamera, u, v) && IsTargetUnderPointer(rightCamera, u, v);
     }
 
     private bool IsTargetUnderPointer(Camera eyeCamera, float u, float v)
@@ -206,6 +296,7 @@ public sealed class EyeGazeController : MonoBehaviour
         return Vector2.Distance(clickedWorldPoint, focusTarget.position) <= focusHitRadius;
     }
 }
+
 
 
 
