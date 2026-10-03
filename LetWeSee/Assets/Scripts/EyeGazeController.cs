@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
@@ -30,7 +31,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0f, 30f)] private float pupilTravel = 14f;
     [SerializeField, Range(0f, 12f)] private float cameraTravel = 8f;
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
-    [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 24f;
+    [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
     [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
     [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.2f;
@@ -51,6 +52,10 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool sequenceEnabled;
     private int sequenceIndex;
     private bool sequenceComplete;
+    private bool focusTargetCurrentlyAligned;
+    private Coroutine alignmentSnapRoutine;
+    private Transform snappingTarget;
+    private Vector3 snappingTargetOriginalScale;
     private Transform lockedFocusTarget;
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
@@ -589,6 +594,15 @@ public sealed class EyeGazeController : MonoBehaviour
         bool leftOnTarget = false;
         bool rightOnTarget = false;
         Transform target = CurrentFocusTarget;
+        bool targetAligned = target != null &&
+            IsEyeTargetAligned(target) &&
+            IsTargetCenterVisible(leftCamera, target) &&
+            IsTargetCenterVisible(rightCamera, target);
+
+        if (targetAligned && !focusTargetCurrentlyAligned)
+            PlayAlignmentSnap(target);
+        focusTargetCurrentlyAligned = targetAligned;
+
         if (target != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(
             worldPanel, screenPointer, null, out Vector2 local))
         {
@@ -605,6 +619,64 @@ public sealed class EyeGazeController : MonoBehaviour
             rightEyeImage.color = rightOnTarget ? new Color(0.62f, 1f, 0.72f, rightEyeBaseColor.a) : rightEyeBaseColor;
     }
 
+    private bool IsEyeTargetAligned(Transform target)
+    {
+        Vector3 leftTargetView = leftCamera.WorldToViewportPoint(target.position);
+        Vector3 rightTargetView = rightCamera.WorldToViewportPoint(target.position);
+        if (leftTargetView.z <= 0f || rightTargetView.z <= 0f) return false;
+
+        Vector2 targetImageSeparation = new Vector2(
+            (leftTargetView.x - rightTargetView.x) * worldPanel.rect.width,
+            (leftTargetView.y - rightTargetView.y) * worldPanel.rect.height);
+        return targetImageSeparation.magnitude <= focusAlignmentTolerancePixels;
+    }
+
+    private static bool IsTargetCenterVisible(Camera eyeCamera, Transform target)
+    {
+        Vector3 targetView = eyeCamera.WorldToViewportPoint(target.position);
+        return targetView.z > 0f && targetView.x >= 0f && targetView.x <= 1f &&
+            targetView.y >= 0f && targetView.y <= 1f;
+    }
+
+    private void PlayAlignmentSnap(Transform target)
+    {
+        if (alignmentSnapRoutine != null)
+        {
+            StopCoroutine(alignmentSnapRoutine);
+            if (snappingTarget != null)
+                snappingTarget.localScale = snappingTargetOriginalScale;
+        }
+
+        snappingTarget = target;
+        snappingTargetOriginalScale = target.localScale;
+        alignmentSnapRoutine = StartCoroutine(AlignmentSnapAnimation(target, snappingTargetOriginalScale));
+    }
+
+    private IEnumerator AlignmentSnapAnimation(Transform target, Vector3 originalScale)
+    {
+        Vector3 popScale = originalScale * 1.35f;
+        const float popDuration = 0.18f;
+        const float settleDuration = 0.36f;
+
+        for (float elapsed = 0f; elapsed < popDuration; elapsed += Time.deltaTime)
+        {
+            if (target == null) yield break;
+            target.localScale = Vector3.Lerp(originalScale, popScale, elapsed / popDuration);
+            yield return null;
+        }
+
+        for (float elapsed = 0f; elapsed < settleDuration; elapsed += Time.deltaTime)
+        {
+            if (target == null) yield break;
+            target.localScale = Vector3.Lerp(popScale, originalScale, elapsed / settleDuration);
+            yield return null;
+        }
+
+        if (target != null) target.localScale = originalScale;
+        alignmentSnapRoutine = null;
+        snappingTarget = null;
+    }
+
     private bool IsPointerOnFocusTarget(Vector2 screenPointer)
     {
         Transform target = CurrentFocusTarget;
@@ -616,14 +688,8 @@ public sealed class EyeGazeController : MonoBehaviour
         float u = Mathf.InverseLerp(panelRect.xMin, panelRect.xMax, local.x);
         float v = Mathf.InverseLerp(panelRect.yMin, panelRect.yMax, local.y);
 
-        // Only allow focus when the two eye images of the current sequence target have converged.
-        Vector3 leftTargetView = leftCamera.WorldToViewportPoint(target.position);
-        Vector3 rightTargetView = rightCamera.WorldToViewportPoint(target.position);
-        Vector2 targetImageSeparation = new Vector2(
-            (leftTargetView.x - rightTargetView.x) * worldPanel.rect.width,
-            (leftTargetView.y - rightTargetView.y) * worldPanel.rect.height);
-        if (targetImageSeparation.magnitude > focusAlignmentTolerancePixels)
-            return false;
+        // The target views can be close without requiring pixel-perfect convergence.
+        if (!IsEyeTargetAligned(target)) return false;
 
         // The click must land on the target in both eye views.
         return IsTargetUnderPointer(leftCamera, target, u, v) && IsTargetUnderPointer(rightCamera, target, u, v);

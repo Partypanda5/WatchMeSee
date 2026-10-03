@@ -2593,10 +2593,10 @@ MonoBehaviour:
   pupilTravel: 14
   cameraTravel: 10
   focusHitRadius: 0.9
-  focusAlignmentTolerancePixels: 24
+  focusAlignmentTolerancePixels: 48
   followSpeed: 10
   normalEyeAimSensitivity: 1
-  draggingEyeAimSensitivity: 0.2
+  draggingEyeAimSensitivity: 0.05
   startingEyeAimRange: 0.7
   focusTargetRandomRange: {x: 2.5, y: 1.6}
 --- !u!4 &804569008
