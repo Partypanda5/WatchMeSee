@@ -1,0 +1,87 @@
+{
+  "version": 1,
+  "name": "EyeControls",
+  "maps": [
+    {
+      "name": "EyeControls",
+      "id": "dd5a1c46-2c24-4c0b-bbc1-b0e9615b58c1",
+      "actions": [
+        {
+          "name": "PointerPosition",
+          "type": "Value",
+          "id": "a71eec44-752a-4415-8c9e-1c5293b1aa7a",
+          "expectedControlType": "Vector2",
+          "processors": "",
+          "interactions": "",
+          "initialStateCheck": true
+        },
+        {
+          "name": "EyeDrag",
+          "type": "Button",
+          "id": "b8e438b8-94f6-429e-9aaa-5df250da6d01",
+          "expectedControlType": "Button",
+          "processors": "",
+          "interactions": "",
+          "initialStateCheck": false
+        },
+        {
+          "name": "FocusClick",
+          "type": "Button",
+          "id": "94c41311-6643-4a31-8c75-95c5935ee88f",
+          "expectedControlType": "Button",
+          "processors": "",
+          "interactions": "",
+          "initialStateCheck": false
+        }
+      ],
+      "bindings": [
+        {
+          "name": "",
+          "id": "3cb77c8c-83ba-43dc-a041-7db217867caa",
+          "path": "<Mouse>/position",
+          "interactions": "",
+          "processors": "",
+          "groups": "Keyboard&Mouse",
+          "action": "PointerPosition",
+          "isComposite": false,
+          "isPartOfComposite": false
+        },
+        {
+          "name": "",
+          "id": "fe2ecc12-f736-4c42-b8d7-037539705ccd",
+          "path": "<Mouse>/leftButton",
+          "interactions": "",
+          "processors": "",
+          "groups": "Keyboard&Mouse",
+          "action": "EyeDrag",
+          "isComposite": false,
+          "isPartOfComposite": false
+        },
+        {
+          "name": "",
+          "id": "c2d4ec4b-2057-4825-8d4a-5ae1e494626d",
+          "path": "<Mouse>/leftButton",
+          "interactions": "",
+          "processors": "",
+          "groups": "Keyboard&Mouse",
+          "action": "FocusClick",
+          "isComposite": false,
+          "isPartOfComposite": false
+        }
+      ]
+    }
+  ],
+  "controlSchemes": [
+    {
+      "name": "Keyboard&Mouse",
+      "bindingGroup": "Keyboard&Mouse",
+      "devices": [
+        {
+          "devicePath": "<Mouse>",
+          "isOptional": false,
+          "isOR": false
+        }
+      ]
+    }
+  ]
+}
