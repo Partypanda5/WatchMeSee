@@ -16,6 +16,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private RectTransform leftPanel;
     [SerializeField] private RectTransform armVisual;
     [SerializeField] private RectTransform handVisual;
+    [Tooltip("Optional sprite face. When set, it drives the eye aim instead of the UI eyes above.")]
+    [SerializeField] private CharacterEyes characterEyes;
 
     [Header("World panel")]
     [SerializeField] private RectTransform worldPanel;
@@ -86,6 +88,11 @@ public sealed class EyeGazeController : MonoBehaviour
 
         leftAim = RandomStartingAim();
         rightAim = RandomStartingAim();
+        if (characterEyes != null)
+        {
+            characterEyes.SetAims(leftAim, rightAim);
+            characterEyes.DragStarted += OnCharacterDragStarted;
+        }
 
         if (deodorantTarget == null && GameObject.Find("DeodorantTarget") != null)
             deodorantTarget = GameObject.Find("DeodorantTarget").transform;
@@ -383,11 +390,27 @@ public sealed class EyeGazeController : MonoBehaviour
         }
     }
 
+    private void OnDestroy()
+    {
+        if (characterEyes != null) characterEyes.DragStarted -= OnCharacterDragStarted;
+    }
+
+    // Grabbing an eye on the sprite face exits focus, same as grabbing a UI eye.
+    private void OnCharacterDragStarted()
+    {
+        if (!focused) return;
+        focused = false;
+        lockedFocusTarget = null;
+        leftAim = Vector2.zero;
+        rightAim = Vector2.zero;
+        characterEyes.SetAims(leftAim, rightAim);
+    }
+
     private void Update()
     {
+        bool uiEyesReady = leftEyeRect != null && rightEyeRect != null && leftPupil != null && rightPupil != null;
         if (pointerPosition == null || eyeDrag == null || focusClick == null ||
-            leftEyeRect == null || rightEyeRect == null || leftPupil == null ||
-            rightPupil == null || worldPanel == null || leftCamera == null || rightCamera == null)
+            (characterEyes == null && !uiEyesReady) || worldPanel == null || leftCamera == null || rightCamera == null)
             return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
@@ -397,8 +420,13 @@ public sealed class EyeGazeController : MonoBehaviour
         UpdateEyeFocusFeedback(pointer);
         bool overFace = pointer.x < Screen.width * 0.4f;
 
+        if (characterEyes != null)
+        {
+            leftAim = characterEyes.LeftAimTarget;
+            rightAim = characterEyes.RightAimTarget;
+        }
         // Choose the eye once, on mouse-down. Keep that choice until mouse-up.
-        if (eyeDrag.WasPressedThisFrame())
+        else if (eyeDrag.WasPressedThisFrame())
         {
             draggedEye = DraggedEye.None;
             if (overFace && RectTransformUtility.RectangleContainsScreenPoint(leftEyeRect, pointer, null))
@@ -437,17 +465,21 @@ public sealed class EyeGazeController : MonoBehaviour
             {
                 lockedFocusTarget = newlyFocusedTarget;
                 focused = true;
+                if (characterEyes != null) characterEyes.SetAims(Vector2.zero, Vector2.zero);
                 LogTargetInteraction(newlyFocusedTarget);
                 AdvanceFocusSequence();
             }
         }
 
-        Vector2 wantedLeftPupil = focused ? Vector2.zero : leftAim * pupilTravel;
-        Vector2 wantedRightPupil = focused ? Vector2.zero : rightAim * pupilTravel;
-        leftPupil.anchoredPosition = Vector2.Lerp(
-            leftPupil.anchoredPosition, leftPupilStart + wantedLeftPupil, Time.deltaTime * followSpeed);
-        rightPupil.anchoredPosition = Vector2.Lerp(
-            rightPupil.anchoredPosition, rightPupilStart + wantedRightPupil, Time.deltaTime * followSpeed);
+        if (characterEyes == null)
+        {
+            Vector2 wantedLeftPupil = focused ? Vector2.zero : leftAim * pupilTravel;
+            Vector2 wantedRightPupil = focused ? Vector2.zero : rightAim * pupilTravel;
+            leftPupil.anchoredPosition = Vector2.Lerp(
+                leftPupil.anchoredPosition, leftPupilStart + wantedLeftPupil, Time.deltaTime * followSpeed);
+            rightPupil.anchoredPosition = Vector2.Lerp(
+                rightPupil.anchoredPosition, rightPupilStart + wantedRightPupil, Time.deltaTime * followSpeed);
+        }
 
         Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
         Vector3 wantedLeftCamera = focused && cameraFocusTarget != null

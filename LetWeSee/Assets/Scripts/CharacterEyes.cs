@@ -63,6 +63,12 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField, Range(-1f, 1f)] private float turnTravel = 0.07f;
     [SerializeField, Range(1f, 30f)] private float featureFollowSpeed = 8f;
 
+    [Header("Hand")]
+    [Tooltip("Follows the pointer by its pivot (the fingertip). While dragging an eye it only moves as far as the pupil does.")]
+    [SerializeField] private SpriteRenderer hand;
+    [SerializeField] private Sprite pointingHand;
+    [SerializeField] private Sprite pressingHand;
+
     private InputAction pointerPosition;
     private InputAction eyeDrag;
     private Eye dragged;
@@ -75,12 +81,47 @@ public sealed class CharacterEyes : MonoBehaviour
     private float rightBrowOffset;
     private float turnOffset;
 
-    // -1..1 aim of each pupil within its reachable range, for driving the eye cameras later.
-    public Vector2 LeftAim => Aim(leftEye);
-    public Vector2 RightAim => Aim(rightEye);
+    private bool initialized;
+
+    // Fired when the player grabs an eye, before the drag starts moving it.
+    public event System.Action DragStarted;
+
+    // -1..1 aim of each pupil within its reachable range: where the pupil is now...
+    public Vector2 LeftAim => Aim(leftEye, leftEye.pupilCurrent);
+    public Vector2 RightAim => Aim(rightEye, rightEye.pupilCurrent);
+    // ...and where it is heading.
+    public Vector2 LeftAimTarget => Aim(leftEye, leftEye.pupilTarget);
+    public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
+
+    // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
+    public void SetAims(Vector2 left, Vector2 right)
+    {
+        EnsureInitialized();
+        SetAim(leftEye, left);
+        SetAim(rightEye, right);
+    }
+
+    private void SetAim(Eye eye, Vector2 aim)
+    {
+        if (eye.root == null || eye.pupil == null) return;
+        Vector2 room = Vector2.Max(eye.radius - eye.pupilExtents, Vector2.one * 0.001f);
+        eye.pupilTarget = ClampPupil(eye, eye.center + new Vector2(aim.x * room.x, aim.y * room.y));
+    }
 
     private void Awake()
     {
+        EnsureInitialized();
+
+        if (inputActions == null) return;
+        InputActionMap map = inputActions.FindActionMap("EyeControls", true);
+        pointerPosition = map.FindAction("PointerPosition", true);
+        eyeDrag = map.FindAction("EyeDrag", true);
+    }
+
+    private void EnsureInitialized()
+    {
+        if (initialized) return;
+        initialized = true;
         Init(leftEye);
         Init(rightEye);
         if (leftBrow != null) leftBrowRest = leftBrow.localPosition;
@@ -88,11 +129,6 @@ public sealed class CharacterEyes : MonoBehaviour
         turningRest = new Vector3[turningParts.Length];
         for (int i = 0; i < turningParts.Length; i++)
             if (turningParts[i] != null) turningRest[i] = turningParts[i].localPosition;
-
-        if (inputActions == null) return;
-        InputActionMap map = inputActions.FindActionMap("EyeControls", true);
-        pointerPosition = map.FindAction("PointerPosition", true);
-        eyeDrag = map.FindAction("EyeDrag", true);
     }
 
     private void OnEnable()
@@ -201,6 +237,7 @@ public sealed class CharacterEyes : MonoBehaviour
 
             if (dragged != null)
             {
+                DragStarted?.Invoke();
                 dragStartPointer = ToEye(dragged, world);
                 dragStartPupil = dragged.pupilTarget;
             }
@@ -214,6 +251,30 @@ public sealed class CharacterEyes : MonoBehaviour
             Vector2 delta = ToEye(dragged, world) - dragStartPointer;
             dragged.pupilTarget = ClampPupil(dragged, dragStartPupil + delta * dragSensitivity);
         }
+
+        UpdateHand(cam, screen, world);
+    }
+
+    private void UpdateHand(Camera cam, Vector2 screen, Vector3 world)
+    {
+        if (hand == null) return;
+
+        // Only show the hand while the pointer is over this face's view.
+        bool visible = cam.pixelRect.Contains(screen);
+        hand.enabled = visible;
+        if (!visible) return;
+
+        Vector3 tip = world;
+        if (dragged != null)
+        {
+            // Where the pointer would be for the pupil's actual (clamped) position, so the hand stops when the eye does.
+            Vector2 pupilMoved = dragged.pupilTarget - dragStartPupil;
+            tip = ToWorld(dragged, dragStartPointer + pupilMoved / dragSensitivity, world.z);
+        }
+        hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
+
+        Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
+        if (wanted != null) hand.sprite = wanted;
     }
 
     private bool IsOverEye(Eye eye, Vector3 world)
@@ -236,7 +297,7 @@ public sealed class CharacterEyes : MonoBehaviour
         float pupilTop = eye.pupilCurrent.y + eye.pupilExtents.y;
         float pupilBottom = eye.pupilCurrent.y - eye.pupilExtents.y;
         float lidStep = Time.deltaTime * lidFollowSpeed;
-        float aimY = Aim(eye).y;
+        float aimY = Aim(eye, eye.pupilCurrent).y;
 
         if (eye.topLid != null)
         {
@@ -277,10 +338,10 @@ public sealed class CharacterEyes : MonoBehaviour
         return eye.center + offset;
     }
 
-    private Vector2 Aim(Eye eye)
+    private Vector2 Aim(Eye eye, Vector2 pupilPosition)
     {
         Vector2 room = Vector2.Max(eye.radius - eye.pupilExtents, Vector2.one * 0.001f);
-        Vector2 offset = eye.pupilCurrent - eye.center;
+        Vector2 offset = pupilPosition - eye.center;
         return new Vector2(Mathf.Clamp(offset.x / room.x, -1f, 1f), Mathf.Clamp(offset.y / room.y, -1f, 1f));
     }
 
