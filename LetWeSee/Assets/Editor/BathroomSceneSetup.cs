@@ -229,7 +229,7 @@ public static class ArmPlaceholderSetupOnce
         armRect.pivot = new Vector2(0.5f, 0f);
         armRect.sizeDelta = new Vector2(52f, 250f);
         armRect.anchoredPosition = new Vector2(panel.rect.xMin + panel.rect.width * 0.16f, panel.rect.yMin + panel.rect.height * 0.08f);
-        armRect.SetAsFirstSibling();
+        armRect.SetAsLastSibling();
 
         var hand = MakeImage("HandPlaceholder", panel, sprite, new Color(0.82f, 0.59f, 0.47f, 1f));
         var handRect = hand.rectTransform;
@@ -392,7 +392,7 @@ public static class CleanupHandPlaceholdersOnce
         armRect.pivot = new Vector2(0.5f, 0f);
         armRect.sizeDelta = new Vector2(52f, 250f);
         armRect.anchoredPosition = new Vector2(panel.rect.xMin + panel.rect.width * 0.16f, panel.rect.yMin + panel.rect.height * 0.08f);
-        armRect.SetAsFirstSibling();
+        armRect.SetAsLastSibling();
 
         var hand = MakeImage("HandPlaceholder", panel, sprite, new Color(0.82f, 0.59f, 0.47f, 1f));
         var handRect = hand.rectTransform;
@@ -438,5 +438,133 @@ public static class CleanupHandPlaceholdersOnce
         rect.sizeDelta = size;
         rect.anchoredPosition = position;
         rect.localRotation = Quaternion.Euler(0f, 0f, angle);
+    }
+}
+
+[InitializeOnLoad]
+public static class BathroomItemSequenceSetupOnce
+{
+    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string CompletedKey = "WatchMeSee.BathroomItemSequenceSetupCompleted";
+
+    static BathroomItemSequenceSetupOnce()
+    {
+        EditorApplication.delayCall += Run;
+        EditorApplication.playModeStateChanged += state =>
+        {
+            if (state == PlayModeStateChange.EnteredEditMode) EditorApplication.delayCall += Run;
+        };
+    }
+
+    [MenuItem("Watch Me See/Build Bathroom Item Sequence")]
+    public static void SetupFromMenu() => Run();
+
+    private static void Run()
+    {
+        if (EditorPrefs.GetBool(CompletedKey, false) || EditorApplication.isPlayingOrWillChangePlaymode) return;
+        for (int i = 0; i < SceneManager.sceneCount; i++)
+        {
+            var openScene = SceneManager.GetSceneAt(i);
+            if (openScene.isDirty)
+            {
+                Debug.LogWarning("Bathroom item sequence setup paused because an open scene has unsaved changes. Save it, then use Watch Me See > Build Bathroom Item Sequence.");
+                return;
+            }
+        }
+
+        var scene = EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single);
+        var controller = Object.FindAnyObjectByType<EyeGazeController>();
+        if (controller == null)
+        {
+            Debug.LogError("Could not find EyeGazeController in SampleScene.");
+            return;
+        }
+
+        var oldTarget = GameObject.Find("FocusTarget");
+        if (oldTarget != null) Object.DestroyImmediate(oldTarget);
+        DeleteIfExists("DeodorantTarget");
+        DeleteIfExists("MouthwashTarget");
+        DeleteIfExists("MirrorTarget");
+
+        var sprite = AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+        Transform deodorant = BuildBottle("DeodorantTarget", "DEODORANT", new Vector2(-3.1f, 0.4f), sprite,
+            new Color(0.88f, 0.87f, 0.78f, 1f), new Color(0.24f, 0.25f, 0.28f, 1f), new Color(0.78f, 0.63f, 0.35f, 1f), false);
+        Transform mouthwash = BuildBottle("MouthwashTarget", "MOUTH WASH", new Vector2(0f, 0.4f), sprite,
+            new Color(0.30f, 0.75f, 0.80f, 1f), new Color(0.10f, 0.23f, 0.40f, 1f), new Color(0.92f, 0.93f, 0.84f, 1f), true);
+        Transform mirror = BuildMirror("MirrorTarget", "MIRROR", new Vector2(3.0f, 0.55f), sprite);
+
+        var serialized = new SerializedObject(controller);
+        serialized.FindProperty("focusTarget").objectReferenceValue = deodorant;
+        serialized.FindProperty("deodorantTarget").objectReferenceValue = deodorant;
+        serialized.FindProperty("mouthwashTarget").objectReferenceValue = mouthwash;
+        serialized.FindProperty("mirrorTarget").objectReferenceValue = mirror;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        EditorSceneManager.MarkSceneDirty(scene);
+        EditorSceneManager.SaveScene(scene, ScenePath);
+        AssetDatabase.SaveAssets();
+        EditorPrefs.SetBool(CompletedKey, true);
+        Debug.Log("Built deodorant, mouthwash, and mirror targets for the bathroom focus sequence.");
+    }
+
+    private static Transform BuildBottle(string name, string label, Vector2 position, Sprite sprite,
+        Color bodyColor, Color capColor, Color labelColor, bool wide)
+    {
+        var root = new GameObject(name);
+        root.transform.position = new Vector3(position.x, position.y, 0f);
+        float bodyWidth = wide ? 0.82f : 0.62f;
+        AddPart(root.transform, "Bottle", sprite, Vector2.zero, new Vector2(bodyWidth, 1.35f), bodyColor, 4);
+        AddPart(root.transform, "Neck", sprite, new Vector2(0f, 0.76f), new Vector2(wide ? 0.46f : 0.50f, 0.25f), bodyColor, 5);
+        AddPart(root.transform, "Cap", sprite, new Vector2(0f, 0.98f), new Vector2(0.52f, 0.28f), capColor, 6);
+        AddPart(root.transform, "Label", sprite, new Vector2(0f, -0.03f), new Vector2(wide ? 0.68f : 0.52f, 0.42f), labelColor, 7);
+        AddText(root.transform, label, new Vector2(0f, -0.03f), wide ? 0.075f : 0.085f, new Color(0.11f, 0.16f, 0.20f, 1f), 8);
+        AddText(root.transform, label, new Vector2(0f, -1.02f), 0.10f, Color.white, 8);
+        return root.transform;
+    }
+
+    private static Transform BuildMirror(string name, string label, Vector2 position, Sprite sprite)
+    {
+        var root = new GameObject(name);
+        root.transform.position = new Vector3(position.x, position.y, 0f);
+        AddPart(root.transform, "MirrorFrame", sprite, new Vector2(0f, 0.15f), new Vector2(2.1f, 1.85f), new Color(0.42f, 0.31f, 0.30f, 1f), 3);
+        AddPart(root.transform, "ReflectiveGlass", sprite, new Vector2(0f, 0.15f), new Vector2(1.82f, 1.57f), new Color(0.54f, 0.78f, 0.82f, 1f), 4);
+        AddPart(root.transform, "Reflection", sprite, new Vector2(-0.42f, 0.15f), new Vector2(0.16f, 1.35f), new Color(0.86f, 0.94f, 0.91f, 0.72f), 5);
+        AddText(root.transform, label, new Vector2(0f, -1.10f), 0.11f, Color.white, 8);
+        return root.transform;
+    }
+
+    private static void AddPart(Transform parent, string name, Sprite sprite, Vector2 localPosition, Vector2 size, Color color, int order)
+    {
+        var go = new GameObject(name, typeof(SpriteRenderer));
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
+        go.transform.localScale = new Vector3(size.x, size.y, 1f);
+        var renderer = go.GetComponent<SpriteRenderer>();
+        renderer.sprite = sprite;
+        renderer.color = color;
+        renderer.sortingOrder = order;
+    }
+
+    private static void AddText(Transform parent, string value, Vector2 localPosition, float characterSize, Color color, int order)
+    {
+        var go = new GameObject("Label", typeof(TextMesh));
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = new Vector3(localPosition.x, localPosition.y, -0.02f);
+        var text = go.GetComponent<TextMesh>();
+        text.text = value;
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 48;
+        text.characterSize = characterSize;
+        text.anchor = TextAnchor.MiddleCenter;
+        text.alignment = TextAlignment.Center;
+        text.color = color;
+        var meshRenderer = go.GetComponent<MeshRenderer>();
+        meshRenderer.sortingOrder = order;
+    }
+
+    private static void DeleteIfExists(string name)
+    {
+        var go = GameObject.Find(name);
+        if (go != null) Object.DestroyImmediate(go);
     }
 }
