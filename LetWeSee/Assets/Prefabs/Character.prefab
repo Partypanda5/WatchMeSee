@@ -3036,9 +3036,14 @@ MonoBehaviour:
   deodorantIdleHand: {fileID: 21300000, guid: 70d8d93ba2d65544fb9c0480854b663d, type: 3}
   mouthwashIdleHand: {fileID: 21300000, guid: 4d1cee2204d53274091d04e47c334195, type: 3}
   mouthwashHoldHand: {fileID: 21300000, guid: 57d023a89fe05f442a807729133d147a, type: 3}
+  toothbrushIdleHand: {fileID: 21300000, guid: a539b0b1297363643adc60dfac0e5b8d, type: 3}
+  toothbrushHoldHand: {fileID: 21300000, guid: 7e2588926d96b33418e30b5cad5a7d67, type: 3}
   mouthVisual: {fileID: 2850158083860305927}
   deodorantSpraySound: {fileID: 8300000, guid: 2a09fbf05fcbe274d8b0a02410e40c8e, type: 3}
   mouthwashSwishingSound: {fileID: 8300000, guid: 65981c71b528c944cb81050799760d14, type: 3}
+  toothBrushSound: {fileID: 8300000, guid: 4d24b10e43588bc4eacd3dbd3eb8a923, type: 3}
+  mouthwashBottleTipNormalized: {x: -0.46, y: 0.42}
+  toothbrushTipNormalized: {x: -0.48, y: 0.4}
   manMoanClips:
   - {fileID: 8300000, guid: 99eec161411e1af4f826a8600fd18835, type: 3}
   - {fileID: 8300000, guid: 4f5c4e9ed67586847b58112a234e158d, type: 3}

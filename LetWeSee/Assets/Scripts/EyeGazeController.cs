@@ -111,7 +111,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private Color rightEyeBaseColor;
     private bool previousCursorVisible;
     private CursorLockMode previousCursorLockState;
-    private bool mouthwashCursorConfined;
+    private bool faceUseCursorConfined;
     private const float DoubleVisionAlpha = 0.48f;
 
     private void Awake()
@@ -239,7 +239,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private void OnDisable()
     {
         if (eyeMap != null) eyeMap.Disable();
-        mouthwashCursorConfined = false;
+        faceUseCursorConfined = false;
         draggedEye = DraggedEye.None;
 
         if (Application.isPlaying)
@@ -469,10 +469,10 @@ public sealed class EyeGazeController : MonoBehaviour
         // Let the pointer enter the face area from the world side, then keep it there
         // for the mouth interaction. Unity's built-in Confined mode only supports the
         // whole game window, so warp at the panel boundary instead.
-        if (!mouthwashCursorConfined)
+        if (!faceUseCursorConfined)
         {
             if (!RectTransformUtility.RectangleContainsScreenPoint(leftPanel, pointer, null)) return;
-            mouthwashCursorConfined = true;
+            faceUseCursorConfined = true;
         }
 
         Vector3[] corners = new Vector3[4];
@@ -507,17 +507,18 @@ public sealed class EyeGazeController : MonoBehaviour
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
         bool mouthwashActive = characterEyes != null && characterEyes.IsUsingMouthwash;
-        if (grabRoutine != null || (characterEyes != null && (characterEyes.IsUsingDeodorant || mouthwashActive)))
+        bool toothbrushActive = characterEyes != null && characterEyes.IsUsingToothbrush;
+        bool faceUseActive = mouthwashActive || toothbrushActive;
+        if (grabRoutine != null || (characterEyes != null && (characterEyes.IsUsingDeodorant || faceUseActive)))
         {
             Cursor.visible = false;
-            if (mouthwashActive)
+            if (faceUseActive)
                 ConfineCursorToLeftPanel(pointer);
             else
-                mouthwashCursorConfined = false;
+                faceUseCursorConfined = false;
             return;
         }
-        mouthwashCursorConfined = false;
-
+        faceUseCursorConfined = false;
         bool releasedEyeDrag = eyeDrag.WasReleasedThisFrame() &&
             (draggedEye != DraggedEye.None || characterEyeDragActive);
         bool overLeftPanel = leftPanel != null && RectTransformUtility.RectangleContainsScreenPoint(leftPanel, pointer, null);
@@ -900,6 +901,8 @@ public sealed class EyeGazeController : MonoBehaviour
             characterEyes.BeginDeodorantUse();
         else if (target == mouthwashTarget && characterEyes != null)
             characterEyes.BeginMouthwashUse();
+        else if (target == toothbrushTarget && characterEyes != null)
+            characterEyes.BeginToothbrushUse();
     }
 
     private Image CreateGrabHand()
