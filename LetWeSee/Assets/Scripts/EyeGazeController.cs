@@ -27,6 +27,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform focusTarget;
     [SerializeField] private Transform deodorantTarget;
     [SerializeField] private Transform mouthwashTarget;
+    [SerializeField] private Transform toothbrushTarget;
     [SerializeField] private Transform mirrorTarget;
     [SerializeField] private RawImage rightEyeView;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
@@ -43,7 +44,6 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(1f, 100f)] private float focusRayDistance = 40f;
     [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.6f;
     [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.03f;
-    [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
     [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
@@ -63,7 +63,6 @@ public sealed class EyeGazeController : MonoBehaviour
     private Vector2 rightAim;
     private bool focused;
     private bool sequenceEnabled;
-    private int sequenceIndex;
     private bool sequenceComplete;
     private bool focusTargetCurrentlyAligned;
     private Coroutine alignmentSnapRoutine;
@@ -71,6 +70,8 @@ public sealed class EyeGazeController : MonoBehaviour
     private Vector3 snappingTargetOriginalScale;
     private Transform grownFocusTarget;
     private Transform lockedFocusTarget;
+    private Transform alignedFocusTarget;
+    private readonly HashSet<Transform> collectedItems = new HashSet<Transform>();
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
     private Quaternion leftCameraStartRotation;
@@ -134,6 +135,8 @@ public sealed class EyeGazeController : MonoBehaviour
             deodorantTarget = GameObject.Find("DeodorantTarget").transform;
         if (mouthwashTarget == null && GameObject.Find("MouthwashTarget") != null)
             mouthwashTarget = GameObject.Find("MouthwashTarget").transform;
+        if (toothbrushTarget == null && GameObject.Find("ToothbrushTarget") != null)
+            toothbrushTarget = GameObject.Find("ToothbrushTarget").transform;
         if (mirrorTarget == null && GameObject.Find("MirrorTarget") != null)
             mirrorTarget = GameObject.Find("MirrorTarget").transform;
 
@@ -155,9 +158,10 @@ public sealed class EyeGazeController : MonoBehaviour
         Sprite placeholderSprite = GetRuntimePlaceholderSprite();
         if (deodorantTarget == null) deodorantTarget = FindTarget("DeodorantTarget");
         if (mouthwashTarget == null) mouthwashTarget = FindTarget("MouthwashTarget");
+        if (toothbrushTarget == null) toothbrushTarget = FindTarget("ToothbrushTarget");
         if (mirrorTarget == null) mirrorTarget = FindTarget("MirrorTarget");
 
-        if (deodorantTarget == null || mouthwashTarget == null || mirrorTarget == null)
+        if (deodorantTarget == null || mouthwashTarget == null || toothbrushTarget == null || mirrorTarget == null)
         {
 
             if (deodorantTarget == null)
@@ -166,11 +170,13 @@ public sealed class EyeGazeController : MonoBehaviour
             if (mouthwashTarget == null)
                 mouthwashTarget = CreateBottleTarget("MouthwashTarget", "MOUTH WASH", new Vector2(0f, 0.4f), placeholderSprite,
                     new Color(0.30f, 0.75f, 0.80f), new Color(0.10f, 0.23f, 0.40f), new Color(0.92f, 0.93f, 0.84f), true);
+            if (toothbrushTarget == null)
+                toothbrushTarget = CreateToothbrushTarget(placeholderSprite, new Vector2(2f, 0.4f));
             if (mirrorTarget == null)
                 mirrorTarget = CreateMirrorTarget("MirrorTarget", new Vector2(3f, 0.55f), placeholderSprite);
         }
 
-        sequenceEnabled = deodorantTarget != null && mouthwashTarget != null && mirrorTarget != null;
+        sequenceEnabled = deodorantTarget != null && mouthwashTarget != null && toothbrushTarget != null && mirrorTarget != null;
         if (sequenceEnabled)
         {
             cameraTravel = Mathf.Max(cameraTravel, 10f);
@@ -319,6 +325,20 @@ public sealed class EyeGazeController : MonoBehaviour
         AddWorldPart(root.transform, "Label", sprite, new Vector2(0f, -0.03f), new Vector2(wide ? 0.68f : 0.52f, 0.42f), labelColor, 7);
         AddWorldText(root.transform, label, new Vector2(0f, -0.03f), wide ? 0.075f : 0.085f, new Color(0.11f, 0.16f, 0.20f), 8);
         AddWorldText(root.transform, label, new Vector2(0f, -1.02f), 0.10f, Color.white, 8);
+        return root.transform;
+    }
+
+    private static Transform CreateToothbrushTarget(Sprite sprite, Vector2 position)
+    {
+        var root = new GameObject("ToothbrushTarget");
+        root.transform.position = new Vector3(position.x, position.y, 0f);
+        AddWorldPart(root.transform, "Handle", sprite, Vector2.zero, new Vector2(0.16f, 1.25f),
+            new Color(0.35f, 0.72f, 0.70f), 4);
+        AddWorldPart(root.transform, "BrushHead", sprite, new Vector2(0f, 0.70f), new Vector2(0.38f, 0.28f),
+            new Color(0.91f, 0.88f, 0.78f), 5);
+        AddWorldPart(root.transform, "Bristles", sprite, new Vector2(0f, 0.88f), new Vector2(0.30f, 0.12f),
+            new Color(0.55f, 0.77f, 0.82f), 6);
+        AddWorldText(root.transform, "TOOTHBRUSH", new Vector2(0f, -0.86f), 0.085f, Color.white, 8);
         return root.transform;
     }
 
@@ -694,20 +714,25 @@ public sealed class EyeGazeController : MonoBehaviour
         {
             characterEyeDragActive = false;
             if (!sequenceComplete && !focused && focusTargetCurrentlyAligned &&
-                grownFocusTarget == CurrentFocusTarget)
+                alignedFocusTarget != null && grownFocusTarget == alignedFocusTarget)
             {
-                Transform newlyFocusedTarget = CurrentFocusTarget;
+                Transform newlyFocusedTarget = alignedFocusTarget;
                 if (newlyFocusedTarget != null)
                 {
                     lockedFocusTarget = newlyFocusedTarget;
                     focused = true;
-                    if (characterEyes != null) characterEyes.SetAims(Vector2.zero, Vector2.zero);
+                    if (lockedFocusTarget == mirrorTarget)
+                    {
+                        Debug.Log("wow you look so pretty");
+                        sequenceComplete = true;
+                    }
                 }
             }
         }
 
         if (!sequenceComplete && !overFace && focused && focusClick.WasPressedThisFrame() &&
-            lockedFocusTarget != null && grabRoutine == null && IsPointerOnFocusTarget(pointer))
+            IsPickupTarget(lockedFocusTarget) && grabRoutine == null &&
+            IsPointerOnFocusTarget(pointer, lockedFocusTarget))
         {
             LogTargetInteraction(lockedFocusTarget);
             grabRoutine = StartCoroutine(GrabTargetRoutine(lockedFocusTarget));
@@ -715,15 +740,15 @@ public sealed class EyeGazeController : MonoBehaviour
 
         if (characterEyes == null)
         {
-            Vector2 wantedLeftPupil = focused ? Vector2.zero : leftAim * pupilTravel;
-            Vector2 wantedRightPupil = focused ? Vector2.zero : rightAim * pupilTravel;
+            Vector2 wantedLeftPupil = leftAim * pupilTravel;
+            Vector2 wantedRightPupil = rightAim * pupilTravel;
             leftPupil.anchoredPosition = Vector2.Lerp(
                 leftPupil.anchoredPosition, leftPupilStart + wantedLeftPupil, Time.deltaTime * followSpeed);
             rightPupil.anchoredPosition = Vector2.Lerp(
                 rightPupil.anchoredPosition, rightPupilStart + wantedRightPupil, Time.deltaTime * followSpeed);
         }
 
-        Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
+        Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : alignedFocusTarget;
         Vector3 wantedLeftCamera = leftCameraStart;
         Vector3 wantedRightCamera = rightCameraStart;
 
@@ -792,14 +817,17 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private IEnumerator GrabTargetRoutine(Transform target)
     {
-        Image handImage = CreateGrabHand();
-        if (target == null || handImage == null)
+        if (!IsPickupTarget(target))
         {
-            if (target != null)
-            {
-                target.gameObject.SetActive(false);
-                CompleteGrabInteraction();
-            }
+            grabRoutine = null;
+            yield break;
+        }
+
+        Image handImage = CreateGrabHand();
+        if (handImage == null)
+        {
+            target.gameObject.SetActive(false);
+            CompleteGrabInteraction(target);
             grabRoutine = null;
             yield break;
         }
@@ -827,21 +855,22 @@ public sealed class EyeGazeController : MonoBehaviour
         yield return AnimateGrabHand(targetLocal, startLocal, 0.58f, true);
         handImage.gameObject.SetActive(false);
 
-        CompleteGrabInteraction();
+        CompleteGrabInteraction(target);
         grabRoutine = null;
     }
 
-    private void CompleteGrabInteraction()
+    private void CompleteGrabInteraction(Transform target)
     {
+        if (target != null && target != mirrorTarget)
+            collectedItems.Add(target);
+
         ResetAlignmentSnap();
         focusTargetCurrentlyAligned = false;
         focused = false;
         lockedFocusTarget = null;
+        alignedFocusTarget = null;
         grownFocusTarget = null;
-        leftAim = Vector2.zero;
-        rightAim = Vector2.zero;
-        if (characterEyes != null) characterEyes.SetAims(leftAim, rightAim);
-        AdvanceFocusSequence();
+        UpdateSequenceLabelVisibility();
     }
 
     private Image CreateGrabHand()
@@ -892,8 +921,9 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private Vector2 GetTargetScreenPoint(Transform target, Camera canvasCamera)
     {
-        Vector3 leftView = leftCamera.WorldToViewportPoint(target.position);
-        Vector3 rightView = rightCamera.WorldToViewportPoint(target.position);
+        Vector3 worldPoint = GetVisibleTargetCenter(target);
+        Vector3 leftView = leftCamera.WorldToViewportPoint(worldPoint);
+        Vector3 rightView = rightCamera.WorldToViewportPoint(worldPoint);
         Vector2 leftOutput = FisheyeSourceToOutputUv(new Vector2(leftView.x, leftView.y));
         Vector2 rightOutput = FisheyeSourceToOutputUv(new Vector2(rightView.x, rightView.y));
         Vector2 outputUv = (leftOutput + rightOutput) * 0.5f;
@@ -904,6 +934,25 @@ public sealed class EyeGazeController : MonoBehaviour
             0f);
         Vector3 panelWorld = worldPanel.TransformPoint(panelLocal);
         return RectTransformUtility.WorldToScreenPoint(canvasCamera, panelWorld);
+    }
+
+    private static Vector3 GetVisibleTargetCenter(Transform target)
+    {
+        if (target == null) return Vector3.zero;
+        SpriteRenderer[] renderers = target.GetComponentsInChildren<SpriteRenderer>();
+        if (renderers.Length == 0) return target.position;
+
+        Bounds bounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            bounds.Encapsulate(renderers[i].bounds);
+        return bounds.center;
+    }
+
+    private bool IsPickupTarget(Transform target)
+    {
+        return sequenceEnabled && target != null &&
+            (target == deodorantTarget || target == mouthwashTarget || target == toothbrushTarget) &&
+            !collectedItems.Contains(target);
     }
 
     private IEnumerator AnimateGrabHand(Vector2 from, Vector2 to, float duration, bool fadeOut)
@@ -961,14 +1010,40 @@ public sealed class EyeGazeController : MonoBehaviour
         get
         {
             if (!sequenceEnabled) return focusTarget;
-            switch (sequenceIndex)
-            {
-                case 0: return deodorantTarget;
-                case 1: return mouthwashTarget;
-                case 2: return mirrorTarget;
-                default: return null;
-            }
+            if (lockedFocusTarget != null) return lockedFocusTarget;
+            if (alignedFocusTarget != null) return alignedFocusTarget;
+            return AreAllItemsCollected() ? mirrorTarget : null;
         }
+    }
+
+    private Transform FindAlignedFocusTarget()
+    {
+        if (!sequenceEnabled)
+            return focusTarget != null && CenterRayHitsTarget(leftCamera, focusTarget) &&
+                CenterRayHitsTarget(rightCamera, focusTarget) ? focusTarget : null;
+
+        if (AreAllItemsCollected())
+            return mirrorTarget != null && CenterRayHitsTarget(leftCamera, mirrorTarget) &&
+                CenterRayHitsTarget(rightCamera, mirrorTarget) ? mirrorTarget : null;
+
+        if (IsAvailableAndAligned(deodorantTarget)) return deodorantTarget;
+        if (IsAvailableAndAligned(mouthwashTarget)) return mouthwashTarget;
+        if (IsAvailableAndAligned(toothbrushTarget)) return toothbrushTarget;
+
+        return null;
+    }
+
+    private bool IsAvailableAndAligned(Transform target)
+    {
+        return target != null && !collectedItems.Contains(target) && target.gameObject.activeInHierarchy &&
+            CenterRayHitsTarget(leftCamera, target) && CenterRayHitsTarget(rightCamera, target);
+    }
+
+    private bool AreAllItemsCollected()
+    {
+        return deodorantTarget != null && mouthwashTarget != null && toothbrushTarget != null &&
+            collectedItems.Contains(deodorantTarget) && collectedItems.Contains(mouthwashTarget) &&
+            collectedItems.Contains(toothbrushTarget);
     }
 
     private void LogTargetInteraction(Transform target)
@@ -979,38 +1054,27 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
         }
 
-        switch (sequenceIndex)
-        {
-            case 0: Debug.Log("you interacted with deodorant"); break;
-            case 1: Debug.Log("you interacted with mouthwash"); break;
-            case 2: Debug.Log("you interacted with the mirror"); break;
-        }
-    }
-
-    private void AdvanceFocusSequence()
-    {
-        if (!sequenceEnabled || sequenceComplete) return;
-
-        switch (sequenceIndex)
-        {
-            case 0: sequenceIndex = 1; break;
-            case 1: sequenceIndex = 2; break;
-            case 2: sequenceComplete = true; break;
-        }
-
-        UpdateSequenceLabelVisibility();
+        if (target == deodorantTarget) Debug.Log("you interacted with deodorant");
+        else if (target == mouthwashTarget) Debug.Log("you interacted with mouthwash");
+        else if (target == toothbrushTarget) Debug.Log("you interacted with toothbrush");
+        else Debug.Log("you interacted with " + (target != null ? target.name : "the object"));
     }
 
     private void UpdateSequenceLabelVisibility()
     {
         if (!sequenceEnabled) return;
-        Transform[] targets = { deodorantTarget, mouthwashTarget, mirrorTarget };
+        bool mirrorAvailable = AreAllItemsCollected();
+        Transform[] targets = { deodorantTarget, mouthwashTarget, toothbrushTarget, mirrorTarget };
         for (int i = 0; i < targets.Length; i++)
         {
             if (targets[i] == null) continue;
             TextMesh[] labels = targets[i].GetComponentsInChildren<TextMesh>(true);
             foreach (TextMesh label in labels)
-                label.gameObject.SetActive(i == sequenceIndex);
+            {
+                bool itemAvailable = i < 3 && !collectedItems.Contains(targets[i]) && targets[i].gameObject.activeInHierarchy;
+                bool showLabel = i == 3 ? mirrorAvailable : itemAvailable;
+                label.gameObject.SetActive(showLabel);
+            }
         }
     }
 
@@ -1022,6 +1086,7 @@ public sealed class EyeGazeController : MonoBehaviour
         EnsureFocusTargetCollider(focusTarget);
         EnsureFocusTargetCollider(deodorantTarget);
         EnsureFocusTargetCollider(mouthwashTarget);
+        EnsureFocusTargetCollider(toothbrushTarget);
         EnsureFocusTargetCollider(mirrorTarget);
         focusRayRenderers = FindObjectsOfType<SpriteRenderer>();
         Physics.SyncTransforms();
@@ -1119,18 +1184,20 @@ public sealed class EyeGazeController : MonoBehaviour
     private void UpdateEyeFocusFeedback()
     {
         Physics.SyncTransforms();
-        Transform target = CurrentFocusTarget;
-        bool leftOnTarget = target != null && CenterRayHitsTarget(leftCamera, target);
-        bool rightOnTarget = target != null && CenterRayHitsTarget(rightCamera, target);
+        Transform target = focused && lockedFocusTarget != null
+            ? lockedFocusTarget
+            : FindAlignedFocusTarget();
 
-        if ((snappingTarget != null && snappingTarget != target) ||
+        if (target != alignedFocusTarget ||
+            (snappingTarget != null && snappingTarget != target) ||
             (grownFocusTarget != null && grownFocusTarget != target))
         {
             ResetAlignmentSnap();
             focusTargetCurrentlyAligned = false;
         }
+        alignedFocusTarget = target;
 
-        bool targetAligned = leftOnTarget && rightOnTarget;
+        bool targetAligned = target != null;
         if (targetAligned && !focusTargetCurrentlyAligned)
             PlayAlignmentSnap(target);
         else if (!targetAligned && focusTargetCurrentlyAligned)
@@ -1138,9 +1205,11 @@ public sealed class EyeGazeController : MonoBehaviour
         focusTargetCurrentlyAligned = targetAligned;
 
         if (leftEyeImage != null)
-            leftEyeImage.color = leftOnTarget ? new Color(0.62f, 1f, 0.72f, leftEyeBaseColor.a) : leftEyeBaseColor;
+            leftEyeImage.color = target != null && CenterRayHitsTarget(leftCamera, target)
+                ? new Color(0.62f, 1f, 0.72f, leftEyeBaseColor.a) : leftEyeBaseColor;
         if (rightEyeImage != null)
-            rightEyeImage.color = rightOnTarget ? new Color(0.62f, 1f, 0.72f, rightEyeBaseColor.a) : rightEyeBaseColor;
+            rightEyeImage.color = target != null && CenterRayHitsTarget(rightCamera, target)
+                ? new Color(0.62f, 1f, 0.72f, rightEyeBaseColor.a) : rightEyeBaseColor;
     }
 
     private void PlayAlignmentSnap(Transform target)
@@ -1197,35 +1266,13 @@ public sealed class EyeGazeController : MonoBehaviour
         snappingTarget = null;
     }
 
-    private bool IsPointerOnFocusTarget(Vector2 screenPointer)
+    private bool IsPointerOnFocusTarget(Vector2 screenPointer, Transform target)
     {
-        Transform target = CurrentFocusTarget;
-        if (target == null ||
-            !RectTransformUtility.ScreenPointToLocalPointInRectangle(worldPanel, screenPointer, null, out Vector2 local))
-            return false;
-
-        Rect panelRect = worldPanel.rect;
-        float u = Mathf.InverseLerp(panelRect.xMin, panelRect.xMax, local.x);
-        float v = Mathf.InverseLerp(panelRect.yMin, panelRect.yMax, local.y);
-        Vector2 sourceUv = FisheyeOutputToSourceUv(new Vector2(u, v));
-        u = sourceUv.x;
-        v = sourceUv.y;
-
-        // The target views can be close without requiring pixel-perfect convergence.
-        if (!CenterRayHitsTarget(leftCamera, target) || !CenterRayHitsTarget(rightCamera, target)) return false;
-
-        // Both eye center rays must still land on the object, and the click must land on it too.
-        return IsTargetUnderPointer(leftCamera, target, u, v) && IsTargetUnderPointer(rightCamera, target, u, v);
-    }
-
-    private Vector2 FisheyeOutputToSourceUv(Vector2 outputUv)
-    {
-        float strength = Mathf.Clamp(fisheyeStrength, 0f, 0.8f);
-        if (strength <= 0.0001f) return outputUv;
-
-        Vector2 centered = outputUv * 2f - Vector2.one;
-        float radiusSquared = centered.sqrMagnitude * 0.5f;
-        return centered / (1f + strength * radiusSquared) * 0.5f + Vector2.one * 0.5f;
+        // Focus is already locked to the item after both eye rays converge and the player
+        // releases the drag. Use a right-panel click to activate that locked item; testing
+        // the pixel bounds of both distorted, offset images made some targets unclickable.
+        return target != null && target == lockedFocusTarget && focused && worldPanel != null &&
+            RectTransformUtility.RectangleContainsScreenPoint(worldPanel, screenPointer, null);
     }
 
     private Vector2 FisheyeSourceToOutputUv(Vector2 sourceUv)
@@ -1308,57 +1355,6 @@ public sealed class EyeGazeController : MonoBehaviour
         material.SetFloat("_FocusFeather", focusRadius * 1.5f + 0.02f);
     }
 
-    private bool IsTargetUnderPointer(Camera eyeCamera, Transform target, float u, float v)
-    {
-        if (u < 0f || u > 1f || v < 0f || v > 1f) return false;
-
-        SpriteRenderer[] renderers = target.GetComponentsInChildren<SpriteRenderer>();
-        if (renderers.Length == 0)
-        {
-            Vector3 targetView = eyeCamera.WorldToViewportPoint(target.position);
-            if (targetView.z <= 0f || targetView.x < 0f || targetView.x > 1f || targetView.y < 0f || targetView.y > 1f)
-                return false;
-
-            float radiusU = focusHitRadius / (2f * eyeCamera.orthographicSize * Mathf.Max(0.01f, eyeCamera.aspect));
-            float radiusV = focusHitRadius / (2f * eyeCamera.orthographicSize);
-            return Mathf.Abs(targetView.x - u) <= radiusU && Mathf.Abs(targetView.y - v) <= radiusV;
-        }
-
-        float minU = float.PositiveInfinity;
-        float maxU = float.NegativeInfinity;
-        float minV = float.PositiveInfinity;
-        float maxV = float.NegativeInfinity;
-        bool anyVisibleInFront = false;
-
-        foreach (SpriteRenderer spriteRenderer in renderers)
-        {
-            Bounds bounds = spriteRenderer.bounds;
-            for (int x = 0; x < 2; x++)
-            for (int y = 0; y < 2; y++)
-            for (int z = 0; z < 2; z++)
-            {
-                Vector3 corner = new Vector3(
-                    x == 0 ? bounds.min.x : bounds.max.x,
-                    y == 0 ? bounds.min.y : bounds.max.y,
-                    z == 0 ? bounds.min.z : bounds.max.z);
-                Vector3 viewport = eyeCamera.WorldToViewportPoint(corner);
-                if (viewport.z <= 0f) continue;
-
-                anyVisibleInFront = true;
-                minU = Mathf.Min(minU, viewport.x);
-                maxU = Mathf.Max(maxU, viewport.x);
-                minV = Mathf.Min(minV, viewport.y);
-                maxV = Mathf.Max(maxV, viewport.y);
-            }
-        }
-
-        if (!anyVisibleInFront) return false;
-
-        float paddingU = focusHitRadius / (2f * eyeCamera.orthographicSize * Mathf.Max(0.01f, eyeCamera.aspect));
-        float paddingV = focusHitRadius / (2f * eyeCamera.orthographicSize);
-        return u >= minU - paddingU && u <= maxU + paddingU &&
-            v >= minV - paddingV && v <= maxV + paddingV;
-    }
 }
 
 

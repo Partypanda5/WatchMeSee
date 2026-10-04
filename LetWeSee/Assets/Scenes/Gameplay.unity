@@ -2593,7 +2593,6 @@ MonoBehaviour:
   rightEyeView: {fileID: 2026589519}
   pupilTravel: 14
   cameraTravel: 10
-  focusHitRadius: 0.9
   focusAlignmentTolerancePixels: 48
   followSpeed: 10
   normalEyeAimSensitivity: 1
