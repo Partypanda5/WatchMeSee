@@ -112,8 +112,31 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool previousCursorVisible;
     private CursorLockMode previousCursorLockState;
     private bool faceUseCursorConfined;
+    private bool introDialogueActive;
+    private int introDialogueIndex;
+    private RectTransform introDialoguePanel;
+    private Text introDialogueText;
+    private static readonly string[] IntroDialogueLines =
+    {
+        "ugh... my eyes get so damn itchy when i wake up",
+        "time to make myself pretty",
+        "teeth...deodorant...breathe - that should be enough",
+        "ugh MY EYESZSZSSAA"
+    };
     private const float DoubleVisionAlpha = 0.48f;
 
+    private void Start()
+    {
+        if (leftPanel == null || focusClick == null) return;
+
+        CreateIntroDialogueBox();
+        if (introDialoguePanel == null) return;
+
+        introDialogueActive = true;
+        introDialogueIndex = 0;
+        if (characterEyes != null) characterEyes.SetIntroDialogueLocked(true);
+        Cursor.visible = true;
+    }
     private void Awake()
     {
         CleanPlaceholderVisuals();
@@ -498,8 +521,78 @@ public sealed class EyeGazeController : MonoBehaviour
         if ((confinedPointer - pointer).sqrMagnitude > 0.01f)
             Mouse.current.WarpCursorPosition(confinedPointer);
     }
+    private void CreateIntroDialogueBox()
+    {
+        GameObject panelObject = new GameObject("Bathroom Intro Dialogue", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        introDialoguePanel = panelObject.GetComponent<RectTransform>();
+        introDialoguePanel.SetParent(leftPanel, false);
+        introDialoguePanel.anchorMin = new Vector2(0.06f, 0.035f);
+        introDialoguePanel.anchorMax = new Vector2(0.94f, 0.22f);
+        introDialoguePanel.offsetMin = Vector2.zero;
+        introDialoguePanel.offsetMax = Vector2.zero;
+        introDialoguePanel.SetAsLastSibling();
+
+        Image background = panelObject.GetComponent<Image>();
+        background.color = new Color(0.98f, 0.88f, 0.65f, 0.94f);
+        background.raycastTarget = true;
+        Outline outline = panelObject.AddComponent<Outline>();
+        outline.effectColor = new Color(0.25f, 0.12f, 0.07f, 1f);
+        outline.effectDistance = new Vector2(2f, -2f);
+        outline.useGraphicAlpha = true;
+
+        GameObject textObject = new GameObject("Dialogue Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
+        RectTransform textRect = textObject.GetComponent<RectTransform>();
+        textRect.SetParent(introDialoguePanel, false);
+        textRect.anchorMin = Vector2.zero;
+        textRect.anchorMax = Vector2.one;
+        textRect.offsetMin = new Vector2(20f, 12f);
+        textRect.offsetMax = new Vector2(-20f, -12f);
+
+        introDialogueText = textObject.GetComponent<Text>();
+        introDialogueText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        introDialogueText.fontSize = 28;
+        introDialogueText.resizeTextForBestFit = true;
+        introDialogueText.resizeTextMinSize = 18;
+        introDialogueText.resizeTextMaxSize = 28;
+        introDialogueText.alignment = TextAnchor.MiddleLeft;
+        introDialogueText.horizontalOverflow = HorizontalWrapMode.Wrap;
+        introDialogueText.verticalOverflow = VerticalWrapMode.Truncate;
+        introDialogueText.color = new Color(0.16f, 0.08f, 0.05f, 1f);
+        introDialogueText.raycastTarget = false;
+        introDialogueText.text = IntroDialogueLines[0];
+    }
+
+    private void UpdateIntroDialogue()
+    {
+        Cursor.visible = true;
+        if (pointerPosition == null || focusClick == null || introDialoguePanel == null) return;
+
+        Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+        if (!focusClick.WasPressedThisFrame() ||
+            !RectTransformUtility.RectangleContainsScreenPoint(introDialoguePanel, pointer, null))
+            return;
+
+        introDialogueIndex++;
+        if (introDialogueIndex < IntroDialogueLines.Length)
+        {
+            introDialogueText.text = IntroDialogueLines[introDialogueIndex];
+            return;
+        }
+
+        introDialogueActive = false;
+        Destroy(introDialoguePanel.gameObject);
+        introDialoguePanel = null;
+        introDialogueText = null;
+        if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
+    }
     private void Update()
     {
+        if (introDialogueActive)
+        {
+            UpdateIntroDialogue();
+            return;
+        }
+
         bool uiEyesReady = leftEyeRect != null && rightEyeRect != null && leftPupil != null && rightPupil != null;
         if (pointerPosition == null || eyeDrag == null || focusClick == null ||
             (characterEyes == null && !uiEyesReady) || worldPanel == null || leftCamera == null || rightCamera == null)

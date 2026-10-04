@@ -109,6 +109,11 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool deodorantUseActive;
     private bool mouthwashUseActive;
     private bool toothbrushUseActive;
+    private bool introDialogueLocked;
+    private Coroutine introHandPopRoutine;
+    private Sprite dialogueReturnHandSprite;
+    private Vector3 dialogueReturnHandScale;
+    private Quaternion dialogueReturnHandRotation;
     private Vector2 lastInteractionPointerPosition;
     private Sprite originalHandSprite;
     private Vector3 originalHandPosition;
@@ -196,6 +201,63 @@ public sealed class CharacterEyes : MonoBehaviour
         originalHandRotation = hand.transform.localRotation;
         originalHandEnabled = hand.enabled;
         StartCoroutine(ToothbrushUseSequence());
+    }
+    public void SetIntroDialogueLocked(bool locked)
+    {
+        introDialogueLocked = locked;
+        if (!locked) return;
+
+        dragged = null;
+        faceTapPending = false;
+        if (hand != null) hand.enabled = false;
+    }
+
+    public void PopHandUpAfterIntroDialogue()
+    {
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        if (hand == null || cam == null || pointerPosition == null)
+        {
+            introDialogueLocked = false;
+            return;
+        }
+
+        if (introHandPopRoutine != null) StopCoroutine(introHandPopRoutine);
+        introDialogueLocked = true;
+        hand.sprite = dialogueReturnHandSprite;
+        hand.transform.localScale = dialogueReturnHandScale;
+        hand.transform.localRotation = dialogueReturnHandRotation;
+        hand.enabled = true;
+
+        Rect panel = cam.pixelRect;
+        Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+        pointer.x = Mathf.Clamp(pointer.x, panel.xMin + 2f, panel.xMax - 2f);
+        pointer.y = Mathf.Clamp(pointer.y, panel.yMin + 2f, panel.yMax - 2f);
+        float depth = -cam.transform.position.z;
+        Vector3 end = cam.ScreenToWorldPoint(new Vector3(pointer.x, pointer.y, depth));
+        end.z = hand.transform.position.z;
+        Vector3 start = cam.ScreenToWorldPoint(new Vector3(
+            pointer.x, panel.yMin - Mathf.Max(60f, Screen.height * 0.08f), depth));
+        start.z = hand.transform.position.z;
+        hand.transform.position = start;
+        introHandPopRoutine = StartCoroutine(AnimateIntroHandPop(start, end));
+    }
+
+    private IEnumerator AnimateIntroHandPop(Vector3 start, Vector3 end)
+    {
+        const float duration = 0.55f;
+        float elapsed = 0f;
+        while (elapsed < duration)
+        {
+            elapsed += Time.deltaTime;
+            float t = Mathf.Clamp01(elapsed / duration);
+            float eased = 1f + 2.2f * Mathf.Pow(t - 1f, 3f) + 1.2f * Mathf.Pow(t - 1f, 2f);
+            hand.transform.position = Vector3.LerpUnclamped(start, end, eased);
+            yield return null;
+        }
+
+        hand.transform.position = end;
+        introHandPopRoutine = null;
+        introDialogueLocked = false;
     }
     // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
     public void SetAims(Vector2 left, Vector2 right)
@@ -314,6 +376,12 @@ public sealed class CharacterEyes : MonoBehaviour
     private void Awake()
     {
         EnsureInitialized();
+        if (hand != null)
+        {
+            dialogueReturnHandSprite = pointingHand != null ? pointingHand : hand.sprite;
+            dialogueReturnHandScale = hand.transform.localScale;
+            dialogueReturnHandRotation = hand.transform.localRotation;
+        }
         if (deodorantSpraySound != null)
         {
             deodorantSprayAudioSource = gameObject.AddComponent<AudioSource>();
@@ -423,7 +491,7 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (mirrorCopyMode) return;
 
-        if (!deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && pointerPosition != null && eyeDrag != null)
+        if (!introDialogueLocked && !deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && pointerPosition != null && eyeDrag != null)
             HandleInput();
 
         UpdateDragSquishAudio();
