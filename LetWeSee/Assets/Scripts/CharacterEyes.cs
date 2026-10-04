@@ -92,6 +92,8 @@ public sealed class CharacterEyes : MonoBehaviour
     // ...and where it is heading.
     public Vector2 LeftAimTarget => Aim(leftEye, leftEye.pupilTarget);
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
+    public Sprite PointingHandSprite => pointingHand;
+    public SpriteRenderer HandRenderer => hand;
 
     // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
     public void SetAims(Vector2 left, Vector2 right)
@@ -272,6 +274,8 @@ public sealed class CharacterEyes : MonoBehaviour
             tip = ToWorld(dragged, dragStartPointer + pupilMoved / dragSensitivity, world.z);
         }
         hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
+        hand.transform.localScale = Vector3.one * 0.88f;
+        hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
 
         Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
         if (wanted != null) hand.sprite = wanted;
