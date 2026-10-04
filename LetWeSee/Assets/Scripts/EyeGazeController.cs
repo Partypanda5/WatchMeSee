@@ -36,9 +36,10 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0f, 45f)] private float cameraAimRotationDegrees = 28f;
     [SerializeField, Range(0f, 0.8f)] private float fisheyeStrength = 0.45f;
     [SerializeField, Range(0f, 1f)] private float maximumMisalignmentBlur = 1f;
-    [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 12f;
+    [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 20f;
     [SerializeField, Range(0.1f, 45f)] private float maximumCameraSeparationForBlurDegrees = 20f;
     [SerializeField, Range(1f, 100f)] private float focusRayDistance = 40f;
+    [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.4f;
     [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.03f;
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
@@ -925,7 +926,41 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void CacheFocusRayRenderers()
     {
+        EnsureFocusTargetCollider(focusTarget);
+        EnsureFocusTargetCollider(deodorantTarget);
+        EnsureFocusTargetCollider(mouthwashTarget);
+        EnsureFocusTargetCollider(mirrorTarget);
         focusRayRenderers = FindObjectsOfType<SpriteRenderer>();
+        Physics.SyncTransforms();
+    }
+
+    private void EnsureFocusTargetCollider(Transform target)
+    {
+        if (target == null) return;
+        SpriteRenderer[] renderers = target.GetComponentsInChildren<SpriteRenderer>();
+        if (renderers.Length == 0) return;
+
+        Bounds worldBounds = renderers[0].bounds;
+        for (int i = 1; i < renderers.Length; i++)
+            worldBounds.Encapsulate(renderers[i].bounds);
+
+        Bounds localBounds = new Bounds(target.InverseTransformPoint(worldBounds.center), Vector3.zero);
+        for (int x = 0; x < 2; x++)
+        for (int y = 0; y < 2; y++)
+        for (int z = 0; z < 2; z++)
+        {
+            Vector3 corner = new Vector3(
+                x == 0 ? worldBounds.min.x : worldBounds.max.x,
+                y == 0 ? worldBounds.min.y : worldBounds.max.y,
+                z == 0 ? worldBounds.min.z : worldBounds.max.z);
+            localBounds.Encapsulate(target.InverseTransformPoint(corner));
+        }
+
+        BoxCollider targetCollider = target.GetComponent<BoxCollider>();
+        if (targetCollider == null) targetCollider = target.gameObject.AddComponent<BoxCollider>();
+        targetCollider.center = localBounds.center;
+        targetCollider.size = Vector3.Max(localBounds.size, Vector3.one * 0.01f);
+        targetCollider.isTrigger = true;
     }
 
     private struct CenterRayHit
@@ -970,11 +1005,27 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private bool CenterRayHitsTarget(Camera eyeCamera, Transform target)
     {
-        return eyeCamera != null && RendererBelongsToTarget(FindCenterRayHit(eyeCamera).Renderer, target);
+        if (eyeCamera == null || target == null) return false;
+        Ray ray = eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        RaycastHit[] hits = Physics.SphereCastAll(
+            ray, focusSphereCastRadius, focusRayDistance, eyeCamera.cullingMask, QueryTriggerInteraction.Collide);
+
+        float nearestDistance = float.PositiveInfinity;
+        Collider nearestCollider = null;
+        foreach (RaycastHit hit in hits)
+        {
+            if (hit.distance >= nearestDistance) continue;
+            nearestDistance = hit.distance;
+            nearestCollider = hit.collider;
+        }
+
+        return nearestCollider != null &&
+            (nearestCollider.transform == target || nearestCollider.transform.IsChildOf(target));
     }
 
     private void UpdateEyeFocusFeedback()
     {
+        Physics.SyncTransforms();
         Transform target = CurrentFocusTarget;
         bool leftOnTarget = target != null && CenterRayHitsTarget(leftCamera, target);
         bool rightOnTarget = target != null && CenterRayHitsTarget(rightCamera, target);
@@ -1100,8 +1151,9 @@ public sealed class EyeGazeController : MonoBehaviour
         Transform target = focused && lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
         CenterRayHit leftHit = FindCenterRayHit(leftCamera);
         CenterRayHit rightHit = FindCenterRayHit(rightCamera);
+        Physics.SyncTransforms();
         bool bothRaysHitTarget = target != null &&
-            RendererBelongsToTarget(leftHit.Renderer, target) && RendererBelongsToTarget(rightHit.Renderer, target);
+            CenterRayHitsTarget(leftCamera, target) && CenterRayHitsTarget(rightCamera, target);
 
         for (int i = 0; i < fisheyeImages.Count; i++)
         {
@@ -1123,10 +1175,10 @@ public sealed class EyeGazeController : MonoBehaviour
         float focusRadius = focusPointRadius;
 
         bool rayHitsActiveTarget = RendererBelongsToTarget(rayHit.Renderer, target);
-        SpriteRenderer[] focusRenderers = rayHit.Renderer == null || (rayHitsActiveTarget && !bothRaysHitTarget)
-            ? new SpriteRenderer[0]
-            : rayHitsActiveTarget
-                ? target.GetComponentsInChildren<SpriteRenderer>()
+        SpriteRenderer[] focusRenderers = bothRaysHitTarget
+            ? target.GetComponentsInChildren<SpriteRenderer>()
+            : rayHit.Renderer == null || rayHitsActiveTarget
+                ? new SpriteRenderer[0]
                 : new[] { rayHit.Renderer };
 
         foreach (SpriteRenderer spriteRenderer in focusRenderers)
