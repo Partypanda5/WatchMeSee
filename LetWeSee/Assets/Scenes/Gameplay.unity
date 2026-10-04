@@ -2591,6 +2591,7 @@ MonoBehaviour:
   mouthwashTarget: {fileID: 1802748880}
   mirrorTarget: {fileID: 870613200}
   rightEyeView: {fileID: 2026589519}
+  grabSound: {fileID: 8300000, guid: 5a735a5ce0826164cb5e463045238610, type: 3}
   pupilTravel: 14
   cameraTravel: 10
   focusAlignmentTolerancePixels: 48

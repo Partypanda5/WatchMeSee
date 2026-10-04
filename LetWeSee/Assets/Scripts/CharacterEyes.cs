@@ -1,3 +1,4 @@
+using System.Collections;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -68,6 +69,8 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private SpriteRenderer hand;
     [SerializeField] private Sprite pointingHand;
     [SerializeField] private Sprite pressingHand;
+    [SerializeField] private Sprite deodorantSprayHand;
+    [SerializeField] private Sprite deodorantIdleHand;
     [SerializeField] private AudioClip faceTapSound;
     [SerializeField] private AudioClip eyeDragSquishSound;
 
@@ -83,6 +86,13 @@ public sealed class CharacterEyes : MonoBehaviour
     private float dragSquishPitchPhase;
     private bool faceTapPending;
     private bool mirrorCopyMode;
+    private bool deodorantUseActive;
+    private Sprite originalHandSprite;
+    private Vector3 originalHandPosition;
+    private Vector3 originalHandScale;
+    private Quaternion originalHandRotation;
+    private bool originalHandEnabled;
+    private static Sprite softMistSprite;
     private Vector2 dragStartPointer;
     private Vector2 dragStartPupil;
     private Vector3 leftBrowRest;
@@ -104,6 +114,25 @@ public sealed class CharacterEyes : MonoBehaviour
     public Vector2 LeftAimTarget => Aim(leftEye, leftEye.pupilTarget);
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
     public Sprite PointingHandSprite => pointingHand;
+    public bool IsUsingDeodorant => deodorantUseActive;
+
+    // Called after the deodorant pickup animation completes. The player can spray by holding LMB.
+    public void BeginDeodorantUse()
+    {
+        if (mirrorCopyMode || hand == null || deodorantIdleHand == null || eyeDrag == null || deodorantUseActive)
+            return;
+
+        deodorantUseActive = true;
+        dragged = null;
+        faceTapPending = false;
+        if (eyeDragAudioSource != null) eyeDragAudioSource.Stop();
+        originalHandSprite = hand.sprite;
+        originalHandPosition = hand.transform.position;
+        originalHandScale = hand.transform.localScale;
+        originalHandRotation = hand.transform.localRotation;
+        originalHandEnabled = hand.enabled;
+        StartCoroutine(DeodorantUseSequence());
+    }
 
     // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
     public void SetAims(Vector2 left, Vector2 right)
@@ -315,7 +344,7 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (mirrorCopyMode) return;
 
-        if (pointerPosition != null && eyeDrag != null)
+        if (!deodorantUseActive && pointerPosition != null && eyeDrag != null)
             HandleInput();
 
         UpdateDragSquishAudio();
@@ -482,6 +511,187 @@ public sealed class CharacterEyes : MonoBehaviour
             PlayFaceTap();
             faceTapPending = false;
         }
+    }
+
+    private IEnumerator DeodorantUseSequence()
+    {
+        Bounds faceBounds = GetFaceBounds();
+        hand.transform.position = new Vector3(
+            faceBounds.center.x,
+            faceBounds.min.y + faceBounds.size.y * 0.18f,
+            originalHandPosition.z);
+        hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
+        SetDeodorantHandSprite(deodorantIdleHand);
+        hand.enabled = true;
+
+        const float requiredHoldDuration = 4f;
+        float heldDuration = 0f;
+        float emissionTimer = 0f;
+        while (heldDuration < requiredHoldDuration)
+        {
+            FollowPointerWithinFacePanel();
+            if (eyeDrag.IsPressed())
+            {
+                SetDeodorantHandSprite(deodorantSprayHand != null ? deodorantSprayHand : deodorantIdleHand);
+                heldDuration += Time.deltaTime;
+                emissionTimer += Time.deltaTime;
+                while (emissionTimer >= 0.075f)
+                {
+                    emissionTimer -= 0.075f;
+                    EmitDeodorantMist(faceBounds);
+                }
+            }
+            else
+            {
+                // The four-second action requires one continuous hold. Releasing early cancels it.
+                SetDeodorantHandSprite(deodorantIdleHand);
+                heldDuration = 0f;
+                emissionTimer = 0f;
+            }
+            yield return null;
+        }
+
+        Vector3 handEnd = hand.transform.position + Vector3.down * Mathf.Max(0.5f, faceBounds.size.y * 0.55f);
+        Vector3 handFrom = hand.transform.position;
+        const float lowerDuration = 0.75f;
+        for (float elapsedLower = 0f; elapsedLower < lowerDuration; elapsedLower += Time.deltaTime)
+        {
+            float t = Mathf.Clamp01(elapsedLower / lowerDuration);
+            float eased = t * t * (3f - 2f * t);
+            hand.transform.position = Vector3.Lerp(handFrom, handEnd, eased);
+            yield return null;
+        }
+
+        hand.sprite = pointingHand != null ? pointingHand : originalHandSprite;
+        hand.transform.localScale = originalHandScale;
+        hand.transform.localRotation = originalHandRotation;
+        hand.enabled = true;
+        deodorantUseActive = false;
+    }
+
+    private void SetDeodorantHandSprite(Sprite sprite)
+    {
+        if (sprite == null || hand == null) return;
+        hand.sprite = sprite;
+
+        float normalSize = pointingHand != null
+            ? Mathf.Max(pointingHand.bounds.size.x, pointingHand.bounds.size.y)
+            : 1f;
+        float poseSize = Mathf.Max(sprite.bounds.size.x, sprite.bounds.size.y);
+        hand.transform.localScale = Vector3.one * (0.88f * normalSize / Mathf.Max(0.01f, poseSize));
+    }
+
+    private void FollowPointerWithinFacePanel()
+    {
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        if (cam == null || pointerPosition == null || hand == null) return;
+
+        Rect panel = cam.pixelRect;
+        Bounds handBounds = hand.bounds;
+        Vector3 pivotScreen = cam.WorldToScreenPoint(hand.transform.position);
+        Vector3 leftEdgeScreen = cam.WorldToScreenPoint(
+            new Vector3(handBounds.min.x, handBounds.center.y, handBounds.center.z));
+        Vector3 rightEdgeScreen = cam.WorldToScreenPoint(
+            new Vector3(handBounds.max.x, handBounds.center.y, handBounds.center.z));
+        Vector3 bottomEdgeScreen = cam.WorldToScreenPoint(
+            new Vector3(handBounds.center.x, handBounds.min.y, handBounds.center.z));
+
+        float leftPadding = Mathf.Max(0f, pivotScreen.x - leftEdgeScreen.x);
+        float rightPadding = Mathf.Max(0f, rightEdgeScreen.x - pivotScreen.x);
+        float bottomPadding = Mathf.Max(0f, pivotScreen.y - bottomEdgeScreen.y);
+        Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+        float wantedX = panel.Contains(pointer) ? pointer.x : pivotScreen.x;
+        float minimumX = panel.xMin + leftPadding;
+        float maximumX = panel.xMax - rightPadding;
+        if (minimumX <= maximumX) wantedX = Mathf.Clamp(wantedX, minimumX, maximumX);
+
+        // Keep the bottom of the arm touching the bottom edge of the face view.
+        Vector3 world = cam.ScreenToWorldPoint(new Vector3(wantedX, panel.yMin + bottomPadding, pivotScreen.z));
+        world.z = hand.transform.position.z;
+        hand.transform.position = world;
+    }
+    private Bounds GetFaceBounds()
+    {
+        SpriteRenderer[] renderers = GetComponentsInChildren<SpriteRenderer>(true);
+        bool found = false;
+        Bounds bounds = new Bounds(transform.position, Vector3.one);
+        foreach (SpriteRenderer renderer in renderers)
+        {
+            if (renderer == hand || !renderer.enabled || renderer.sprite == null) continue;
+            if (!found)
+            {
+                bounds = renderer.bounds;
+                found = true;
+            }
+            else
+            {
+                bounds.Encapsulate(renderer.bounds);
+            }
+        }
+        return bounds;
+    }
+
+    private void EmitDeodorantMist(Bounds faceBounds)
+    {
+        if (softMistSprite == null) softMistSprite = CreateSoftMistSprite();
+
+        Vector3 source = hand.transform.position + Vector3.up * (faceBounds.size.y * 0.48f);
+        Vector3 target = new Vector3(
+            Random.Range(faceBounds.min.x, faceBounds.max.x),
+            Random.Range(faceBounds.min.y + faceBounds.size.y * 0.25f, faceBounds.max.y),
+            source.z);
+        Vector3 direction = (target - source).normalized;
+        direction = Quaternion.Euler(0f, 0f, Random.Range(-18f, 18f)) * direction;
+
+        GameObject puff = new GameObject("DeodorantMist");
+        puff.transform.position = source;
+        SpriteRenderer sprite = puff.AddComponent<SpriteRenderer>();
+        sprite.sprite = softMistSprite;
+        sprite.sortingLayerID = hand.sortingLayerID;
+        sprite.sortingOrder = hand.sortingOrder + 1;
+        sprite.color = new Color(0.88f, 0.96f, 1f, Random.Range(0.2f, 0.38f));
+        float size = Random.Range(0.18f, 0.38f);
+        puff.transform.localScale = Vector3.one * size;
+        StartCoroutine(AnimateDeodorantMist(sprite, direction * Random.Range(0.7f, 1.2f), Random.Range(0.45f, 0.8f)));
+    }
+
+    private static Sprite CreateSoftMistSprite()
+    {
+        const int resolution = 32;
+        Texture2D texture = new Texture2D(resolution, resolution, TextureFormat.RGBA32, false);
+        texture.name = "RuntimeDeodorantMist";
+        texture.wrapMode = TextureWrapMode.Clamp;
+        for (int y = 0; y < resolution; y++)
+        for (int x = 0; x < resolution; x++)
+        {
+            float dx = (x + 0.5f) / resolution * 2f - 1f;
+            float dy = (y + 0.5f) / resolution * 2f - 1f;
+            float radius = Mathf.Sqrt(dx * dx + dy * dy);
+            float alpha = 1f - Mathf.SmoothStep(0.25f, 1f, radius);
+            texture.SetPixel(x, y, new Color(1f, 1f, 1f, alpha));
+        }
+        texture.Apply();
+        return Sprite.Create(texture, new Rect(0f, 0f, resolution, resolution), new Vector2(0.5f, 0.5f), resolution);
+    }
+
+    private IEnumerator AnimateDeodorantMist(SpriteRenderer sprite, Vector3 velocity, float lifetime)
+    {
+        if (sprite == null) yield break;
+        Color startColor = sprite.color;
+        Vector3 startPosition = sprite.transform.position;
+        float startScale = sprite.transform.localScale.x;
+        for (float elapsed = 0f; elapsed < lifetime; elapsed += Time.deltaTime)
+        {
+            if (sprite == null) yield break;
+            float t = elapsed / lifetime;
+            sprite.transform.position = startPosition + velocity * elapsed;
+            sprite.transform.localScale = Vector3.one * Mathf.Lerp(startScale, startScale * 2.2f, t);
+            Color color = startColor;
+            color.a = startColor.a * (1f - t);
+            sprite.color = color;
+            yield return null;
+        }
+        if (sprite != null) Destroy(sprite.gameObject);
     }
 
     private bool IsOverEye(Eye eye, Vector3 world)

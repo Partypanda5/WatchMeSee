@@ -30,6 +30,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform toothbrushTarget;
     [SerializeField] private Transform mirrorTarget;
     [SerializeField] private RawImage rightEyeView;
+    [SerializeField] private AudioClip grabSound;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceHeightRatio = 0.88f;
 
@@ -90,6 +91,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private SpriteRenderer[] mirrorCharacterParts = new SpriteRenderer[0];
     private Canvas grabCanvas;
     private Image grabHandImage;
+    private AudioSource grabAudioSource;
     private Coroutine grabRoutine;
     private SpriteRenderer[] focusRayRenderers = new SpriteRenderer[0];
     private Image leftEyeImage;
@@ -104,6 +106,10 @@ public sealed class EyeGazeController : MonoBehaviour
     private void Awake()
     {
         CleanPlaceholderVisuals();
+        grabAudioSource = GetComponent<AudioSource>();
+        if (grabAudioSource == null) grabAudioSource = gameObject.AddComponent<AudioSource>();
+        grabAudioSource.playOnAwake = false;
+        grabAudioSource.spatialBlend = 0f;
         if (leftCamera != null)
         {
             leftCameraStart = leftCamera.transform.position;
@@ -658,7 +664,7 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
-        if (grabRoutine != null)
+        if (grabRoutine != null || (characterEyes != null && characterEyes.IsUsingDeodorant))
         {
             Cursor.visible = false;
             return;
@@ -826,6 +832,7 @@ public sealed class EyeGazeController : MonoBehaviour
         Image handImage = CreateGrabHand();
         if (handImage == null)
         {
+            PlayGrabSound();
             target.gameObject.SetActive(false);
             CompleteGrabInteraction(target);
             grabRoutine = null;
@@ -848,6 +855,7 @@ public sealed class EyeGazeController : MonoBehaviour
         yield return AnimateGrabHand(startLocal, targetLocal, 0.62f, false);
         if (target != null)
         {
+            PlayGrabSound();
             target.gameObject.SetActive(false);
         }
 
@@ -857,6 +865,12 @@ public sealed class EyeGazeController : MonoBehaviour
 
         CompleteGrabInteraction(target);
         grabRoutine = null;
+    }
+
+    private void PlayGrabSound()
+    {
+        if (grabSound != null && grabAudioSource != null)
+            grabAudioSource.PlayOneShot(grabSound);
     }
 
     private void CompleteGrabInteraction(Transform target)
@@ -871,6 +885,8 @@ public sealed class EyeGazeController : MonoBehaviour
         alignedFocusTarget = null;
         grownFocusTarget = null;
         UpdateSequenceLabelVisibility();
+        if (target == deodorantTarget && characterEyes != null)
+            characterEyes.BeginDeodorantUse();
     }
 
     private Image CreateGrabHand()

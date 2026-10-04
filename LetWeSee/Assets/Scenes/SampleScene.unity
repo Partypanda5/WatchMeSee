@@ -825,6 +825,7 @@ MonoBehaviour:
   toothbrushTarget: {fileID: 1351620457}
   mirrorTarget: {fileID: 870613200}
   rightEyeView: {fileID: 2026589519}
+  grabSound: {fileID: 8300000, guid: 5a735a5ce0826164cb5e463045238610, type: 3}
   mirrorFaceWidthRatio: 0.82
   mirrorFaceHeightRatio: 0.88
   pupilTravel: 14
@@ -916,7 +917,7 @@ Transform:
   m_GameObject: {fileID: 937086374}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0.01, y: -1.56, z: -2.66}
+  m_LocalPosition: {x: -0.25, y: -1.56, z: -2.66}
   m_LocalScale: {x: 0.28, y: 0.28, z: 0.28}
   m_ConstrainProportionsScale: 1
   m_Children: []

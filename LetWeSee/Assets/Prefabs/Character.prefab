@@ -3032,6 +3032,8 @@ MonoBehaviour:
   hand: {fileID: 5200000000000000003}
   pointingHand: {fileID: 21300000, guid: 2287dcc5a778f3e49b31537f10095538, type: 3}
   pressingHand: {fileID: 21300000, guid: 3e512551019f2654f92715152cfd8910, type: 3}
+  deodorantSprayHand: {fileID: 21300000, guid: a920f853bbea9b4478f846c8f3aab44d, type: 3}
+  deodorantIdleHand: {fileID: 21300000, guid: 70d8d93ba2d65544fb9c0480854b663d, type: 3}
   faceTapSound: {fileID: 8300000, guid: e9b776e7bce6b5f459257ff5b1c493a0, type: 3}
   eyeDragSquishSound: {fileID: 8300000, guid: e5aa8b2b43ff0c744ae1c58a19910492, type: 3}
 --- !u!1 &7462560493454548008
