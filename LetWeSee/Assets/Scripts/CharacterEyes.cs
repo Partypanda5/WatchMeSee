@@ -70,7 +70,10 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite pointingHand;
     [SerializeField] private Sprite pressingHand;
     [SerializeField] private Sprite deodorantSprayHand;
+    [SerializeField] private Vector2 deodorantCanNozzleNormalized = new Vector2(-0.78f, 0.77f);
     [SerializeField] private Sprite deodorantIdleHand;
+    [SerializeField] private AudioClip deodorantSpraySound;
+    [SerializeField] private AudioClip[] manMoanClips = new AudioClip[0];
     [SerializeField] private AudioClip faceTapSound;
     [SerializeField] private AudioClip eyeDragSquishSound;
 
@@ -79,6 +82,11 @@ public sealed class CharacterEyes : MonoBehaviour
     private Eye dragged;
     private AudioSource faceTapAudioSource;
     private AudioSource eyeDragAudioSource;
+    private AudioSource deodorantSprayAudioSource;
+    private AudioSource manMoanAudioSource;
+    private float manMoanDelay;
+    private bool deodorantWasHeld;
+    private int lastManMoanClipIndex = -1;
     private Vector2 lastDragScreenPosition;
     private float accumulatedDragScreenMovement;
     private float lastEyeMovementTime;
@@ -87,6 +95,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool faceTapPending;
     private bool mirrorCopyMode;
     private bool deodorantUseActive;
+    private Vector2 lastDeodorantPointerPosition;
     private Sprite originalHandSprite;
     private Vector3 originalHandPosition;
     private Vector3 originalHandScale;
@@ -251,6 +260,18 @@ public sealed class CharacterEyes : MonoBehaviour
     private void Awake()
     {
         EnsureInitialized();
+        if (deodorantSpraySound != null)
+        {
+            deodorantSprayAudioSource = gameObject.AddComponent<AudioSource>();
+            deodorantSprayAudioSource.playOnAwake = false;
+            deodorantSprayAudioSource.spatialBlend = 0f;
+        }
+        if (manMoanClips != null && manMoanClips.Length > 0)
+        {
+            manMoanAudioSource = gameObject.AddComponent<AudioSource>();
+            manMoanAudioSource.playOnAwake = false;
+            manMoanAudioSource.spatialBlend = 0f;
+        }
 
         if (inputActions == null) return;
         InputActionMap map = inputActions.FindActionMap("EyeControls", true);
@@ -279,6 +300,8 @@ public sealed class CharacterEyes : MonoBehaviour
     private void OnDisable()
     {
         dragged = null;
+        SetDeodorantSprayAudio(false);
+        StopManMoanAudio();
         if (eyeDragAudioSource != null)
         {
             eyeDragAudioSource.Stop();
@@ -521,8 +544,12 @@ public sealed class CharacterEyes : MonoBehaviour
             faceBounds.min.y + faceBounds.size.y * 0.18f,
             originalHandPosition.z);
         hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
-        SetDeodorantHandSprite(deodorantIdleHand);
+        float referenceHeight = pointingHand != null ? pointingHand.bounds.size.y : 1f;
+        float idleHandHeight = Mathf.Max(0.01f, deodorantIdleHand.bounds.size.y);
+        hand.transform.localScale = Vector3.one * (0.88f * referenceHeight / idleHandHeight);
+        hand.sprite = deodorantIdleHand;
         hand.enabled = true;
+        lastDeodorantPointerPosition = pointerPosition.ReadValue<Vector2>();
 
         const float requiredHoldDuration = 4f;
         float heldDuration = 0f;
@@ -532,25 +559,37 @@ public sealed class CharacterEyes : MonoBehaviour
             FollowPointerWithinFacePanel();
             if (eyeDrag.IsPressed())
             {
-                SetDeodorantHandSprite(deodorantSprayHand != null ? deodorantSprayHand : deodorantIdleHand);
+                SetDeodorantSprayAudio(true);
+                if (!deodorantWasHeld)
+                {
+                    deodorantWasHeld = true;
+                    manMoanDelay = Random.Range(0.15f, 0.65f);
+                }
+                UpdateManMoanAudio();
+                hand.sprite = deodorantSprayHand != null ? deodorantSprayHand : deodorantIdleHand;
                 heldDuration += Time.deltaTime;
                 emissionTimer += Time.deltaTime;
-                while (emissionTimer >= 0.075f)
+                while (emissionTimer >= 0.025f)
                 {
-                    emissionTimer -= 0.075f;
+                    emissionTimer -= 0.025f;
                     EmitDeodorantMist(faceBounds);
                 }
             }
             else
             {
+                SetDeodorantSprayAudio(false);
+                StopManMoanAudio();
+                deodorantWasHeld = false;
                 // The four-second action requires one continuous hold. Releasing early cancels it.
-                SetDeodorantHandSprite(deodorantIdleHand);
+                hand.sprite = deodorantIdleHand;
                 heldDuration = 0f;
                 emissionTimer = 0f;
             }
             yield return null;
         }
 
+        SetDeodorantSprayAudio(false);
+        StopManMoanAudio();
         Vector3 handEnd = hand.transform.position + Vector3.down * Mathf.Max(0.5f, faceBounds.size.y * 0.55f);
         Vector3 handFrom = hand.transform.position;
         const float lowerDuration = 0.75f;
@@ -569,46 +608,80 @@ public sealed class CharacterEyes : MonoBehaviour
         deodorantUseActive = false;
     }
 
-    private void SetDeodorantHandSprite(Sprite sprite)
+    private void SetDeodorantSprayAudio(bool shouldPlay)
     {
-        if (sprite == null || hand == null) return;
-        hand.sprite = sprite;
+        if (deodorantSpraySound == null) return;
+        if (deodorantSprayAudioSource == null)
+        {
+            deodorantSprayAudioSource = gameObject.AddComponent<AudioSource>();
+            deodorantSprayAudioSource.playOnAwake = false;
+            deodorantSprayAudioSource.spatialBlend = 0f;
+        }
 
-        float normalSize = pointingHand != null
-            ? Mathf.Max(pointingHand.bounds.size.x, pointingHand.bounds.size.y)
-            : 1f;
-        float poseSize = Mathf.Max(sprite.bounds.size.x, sprite.bounds.size.y);
-        hand.transform.localScale = Vector3.one * (0.88f * normalSize / Mathf.Max(0.01f, poseSize));
+        if (shouldPlay)
+        {
+            if (deodorantSprayAudioSource.clip != deodorantSpraySound || !deodorantSprayAudioSource.loop)
+            {
+                deodorantSprayAudioSource.Stop();
+                deodorantSprayAudioSource.clip = deodorantSpraySound;
+                deodorantSprayAudioSource.loop = true;
+            }
+            if (!deodorantSprayAudioSource.isPlaying) deodorantSprayAudioSource.Play();
+        }
+        else if (deodorantSprayAudioSource.isPlaying)
+        {
+            deodorantSprayAudioSource.Stop();
+        }
     }
 
+    private void UpdateManMoanAudio()
+    {
+        if (manMoanClips == null || manMoanClips.Length == 0 || manMoanAudioSource == null ||
+            manMoanAudioSource.isPlaying)
+            return;
+
+        manMoanDelay -= Time.deltaTime;
+        if (manMoanDelay > 0f) return;
+
+        int clipIndex = Random.Range(0, manMoanClips.Length);
+        if (manMoanClips.Length > 1 && clipIndex == lastManMoanClipIndex)
+            clipIndex = (clipIndex + Random.Range(1, manMoanClips.Length)) % manMoanClips.Length;
+        lastManMoanClipIndex = clipIndex;
+
+        AudioClip clip = manMoanClips[clipIndex];
+        if (clip == null) return;
+        manMoanAudioSource.clip = clip;
+        manMoanAudioSource.loop = false;
+        manMoanAudioSource.Play();
+        manMoanDelay = Random.Range(0.35f, 1f);
+    }
+
+    private void StopManMoanAudio()
+    {
+        deodorantWasHeld = false;
+        if (manMoanAudioSource != null && manMoanAudioSource.isPlaying)
+            manMoanAudioSource.Stop();
+    }
     private void FollowPointerWithinFacePanel()
     {
         Camera cam = viewCamera != null ? viewCamera : Camera.main;
-        if (cam == null || pointerPosition == null || hand == null) return;
+        if (cam == null || pointerPosition == null) return;
 
-        Rect panel = cam.pixelRect;
-        Bounds handBounds = hand.bounds;
-        Vector3 pivotScreen = cam.WorldToScreenPoint(hand.transform.position);
-        Vector3 leftEdgeScreen = cam.WorldToScreenPoint(
-            new Vector3(handBounds.min.x, handBounds.center.y, handBounds.center.z));
-        Vector3 rightEdgeScreen = cam.WorldToScreenPoint(
-            new Vector3(handBounds.max.x, handBounds.center.y, handBounds.center.z));
-        Vector3 bottomEdgeScreen = cam.WorldToScreenPoint(
-            new Vector3(handBounds.center.x, handBounds.min.y, handBounds.center.z));
-
-        float leftPadding = Mathf.Max(0f, pivotScreen.x - leftEdgeScreen.x);
-        float rightPadding = Mathf.Max(0f, rightEdgeScreen.x - pivotScreen.x);
-        float bottomPadding = Mathf.Max(0f, pivotScreen.y - bottomEdgeScreen.y);
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
-        float wantedX = panel.Contains(pointer) ? pointer.x : pivotScreen.x;
-        float minimumX = panel.xMin + leftPadding;
-        float maximumX = panel.xMax - rightPadding;
-        if (minimumX <= maximumX) wantedX = Mathf.Clamp(wantedX, minimumX, maximumX);
+        float depth = -cam.transform.position.z;
+        Vector3 previousPointerWorld = cam.ScreenToWorldPoint(new Vector3(
+            lastDeodorantPointerPosition.x, lastDeodorantPointerPosition.y, depth));
+        Vector3 currentPointerWorld = cam.ScreenToWorldPoint(new Vector3(
+            pointer.x, pointer.y, depth));
+        Vector3 handPosition = hand.transform.position + (currentPointerWorld - previousPointerWorld);
+        lastDeodorantPointerPosition = pointer;
 
-        // Keep the bottom of the arm touching the bottom edge of the face view.
-        Vector3 world = cam.ScreenToWorldPoint(new Vector3(wantedX, panel.yMin + bottomPadding, pivotScreen.z));
-        world.z = hand.transform.position.z;
-        hand.transform.position = world;
+        Vector3 viewportPosition = cam.WorldToViewportPoint(handPosition);
+        viewportPosition.x = Mathf.Clamp(viewportPosition.x, 0.02f, 0.98f);
+        viewportPosition.y = Mathf.Clamp(viewportPosition.y, 0.02f, 0.98f);
+        handPosition = cam.ViewportToWorldPoint(viewportPosition);
+        handPosition.z = hand.transform.position.z;
+        hand.transform.position = handPosition;
     }
     private Bounds GetFaceBounds()
     {
@@ -631,11 +704,37 @@ public sealed class CharacterEyes : MonoBehaviour
         return bounds;
     }
 
+    private Vector3 GetDeodorantNozzleWorldPosition()
+    {
+        Sprite spraySprite = hand.sprite != null ? hand.sprite : deodorantSprayHand;
+        if (spraySprite == null) return hand.transform.position;
+
+        Bounds localBounds = spraySprite.bounds;
+        Vector3 nozzleLocal = new Vector3(
+            localBounds.center.x + localBounds.extents.x * deodorantCanNozzleNormalized.x,
+            localBounds.center.y + localBounds.extents.y * deodorantCanNozzleNormalized.y,
+            0f);
+        return hand.transform.TransformPoint(nozzleLocal);
+    }
+
+    private Vector3 ClampMistToFacePanel(Vector3 worldPosition)
+    {
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        if (cam == null) return worldPosition;
+
+        Rect panel = cam.pixelRect;
+        Vector3 screen = cam.WorldToScreenPoint(worldPosition);
+        const float edgePadding = 18f;
+        screen.x = Mathf.Clamp(screen.x, panel.xMin + edgePadding, panel.xMax - edgePadding);
+        screen.y = Mathf.Clamp(screen.y, panel.yMin + edgePadding, panel.yMax - edgePadding);
+        return cam.ScreenToWorldPoint(screen);
+    }
+
     private void EmitDeodorantMist(Bounds faceBounds)
     {
         if (softMistSprite == null) softMistSprite = CreateSoftMistSprite();
 
-        Vector3 source = hand.transform.position + Vector3.up * (faceBounds.size.y * 0.48f);
+        Vector3 source = ClampMistToFacePanel(GetDeodorantNozzleWorldPosition());
         Vector3 target = new Vector3(
             Random.Range(faceBounds.min.x, faceBounds.max.x),
             Random.Range(faceBounds.min.y + faceBounds.size.y * 0.25f, faceBounds.max.y),
@@ -649,10 +748,10 @@ public sealed class CharacterEyes : MonoBehaviour
         sprite.sprite = softMistSprite;
         sprite.sortingLayerID = hand.sortingLayerID;
         sprite.sortingOrder = hand.sortingOrder + 1;
-        sprite.color = new Color(0.88f, 0.96f, 1f, Random.Range(0.2f, 0.38f));
-        float size = Random.Range(0.18f, 0.38f);
+        sprite.color = new Color(0.9f, 0.97f, 1f, Random.Range(0.85f, 1f));
+        float size = Random.Range(0.8f, 1.35f);
         puff.transform.localScale = Vector3.one * size;
-        StartCoroutine(AnimateDeodorantMist(sprite, direction * Random.Range(0.7f, 1.2f), Random.Range(0.45f, 0.8f)));
+        StartCoroutine(AnimateDeodorantMist(sprite, direction * Random.Range(1.8f, 3f), Random.Range(0.85f, 1.3f)));
     }
 
     private static Sprite CreateSoftMistSprite()
