@@ -3034,7 +3034,11 @@ MonoBehaviour:
   pressingHand: {fileID: 21300000, guid: 3e512551019f2654f92715152cfd8910, type: 3}
   deodorantSprayHand: {fileID: 21300000, guid: a920f853bbea9b4478f846c8f3aab44d, type: 3}
   deodorantIdleHand: {fileID: 21300000, guid: 70d8d93ba2d65544fb9c0480854b663d, type: 3}
+  mouthwashIdleHand: {fileID: 21300000, guid: 4d1cee2204d53274091d04e47c334195, type: 3}
+  mouthwashHoldHand: {fileID: 21300000, guid: 57d023a89fe05f442a807729133d147a, type: 3}
+  mouthVisual: {fileID: 2850158083860305927}
   deodorantSpraySound: {fileID: 8300000, guid: 2a09fbf05fcbe274d8b0a02410e40c8e, type: 3}
+  mouthwashSwishingSound: {fileID: 8300000, guid: 65981c71b528c944cb81050799760d14, type: 3}
   manMoanClips:
   - {fileID: 8300000, guid: 99eec161411e1af4f826a8600fd18835, type: 3}
   - {fileID: 8300000, guid: 4f5c4e9ed67586847b58112a234e158d, type: 3}

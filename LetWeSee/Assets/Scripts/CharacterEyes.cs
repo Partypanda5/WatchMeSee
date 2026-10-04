@@ -72,7 +72,13 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite deodorantSprayHand;
     [SerializeField] private Vector2 deodorantCanNozzleNormalized = new Vector2(-0.78f, 0.77f);
     [SerializeField] private Sprite deodorantIdleHand;
+    [SerializeField] private Sprite mouthwashIdleHand;
+    [SerializeField] private Sprite mouthwashHoldHand;
+    [SerializeField] private SpriteRenderer mouthVisual;
+    [Tooltip("Normalized bottle-tip position within the mouthwash hand sprite.")]
+    [SerializeField] private Vector2 mouthwashBottleTipNormalized = new Vector2(-0.46f, 0.42f);
     [SerializeField] private AudioClip deodorantSpraySound;
+    [SerializeField] private AudioClip mouthwashSwishingSound;
     [SerializeField] private AudioClip[] manMoanClips = new AudioClip[0];
     [SerializeField] private AudioClip faceTapSound;
     [SerializeField] private AudioClip eyeDragSquishSound;
@@ -83,6 +89,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private AudioSource faceTapAudioSource;
     private AudioSource eyeDragAudioSource;
     private AudioSource deodorantSprayAudioSource;
+    private AudioSource mouthwashAudioSource;
     private AudioSource manMoanAudioSource;
     private float manMoanDelay;
     private bool deodorantWasHeld;
@@ -95,7 +102,8 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool faceTapPending;
     private bool mirrorCopyMode;
     private bool deodorantUseActive;
-    private Vector2 lastDeodorantPointerPosition;
+    private bool mouthwashUseActive;
+    private Vector2 lastInteractionPointerPosition;
     private Sprite originalHandSprite;
     private Vector3 originalHandPosition;
     private Vector3 originalHandScale;
@@ -124,6 +132,7 @@ public sealed class CharacterEyes : MonoBehaviour
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
     public Sprite PointingHandSprite => pointingHand;
     public bool IsUsingDeodorant => deodorantUseActive;
+    public bool IsUsingMouthwash => mouthwashUseActive;
 
     // Called after the deodorant pickup animation completes. The player can spray by holding LMB.
     public void BeginDeodorantUse()
@@ -141,6 +150,26 @@ public sealed class CharacterEyes : MonoBehaviour
         originalHandRotation = hand.transform.localRotation;
         originalHandEnabled = hand.enabled;
         StartCoroutine(DeodorantUseSequence());
+    }
+
+    // Starts the mouthwash action after its pickup animation. Mouse motion moves the idle hand;
+    // a held click on the mouth locks the hand and hides the mouth until release.
+    public void BeginMouthwashUse()
+    {
+        if (mirrorCopyMode || hand == null || mouthwashIdleHand == null || eyeDrag == null ||
+            deodorantUseActive || mouthwashUseActive)
+            return;
+
+        mouthwashUseActive = true;
+        dragged = null;
+        faceTapPending = false;
+        if (eyeDragAudioSource != null) eyeDragAudioSource.Stop();
+        originalHandSprite = hand.sprite;
+        originalHandPosition = hand.transform.position;
+        originalHandScale = hand.transform.localScale;
+        originalHandRotation = hand.transform.localRotation;
+        originalHandEnabled = hand.enabled;
+        StartCoroutine(MouthwashUseSequence());
     }
 
     // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
@@ -302,6 +331,7 @@ public sealed class CharacterEyes : MonoBehaviour
         dragged = null;
         SetDeodorantSprayAudio(false);
         StopManMoanAudio();
+        SetMouthwashAudio(false);
         if (eyeDragAudioSource != null)
         {
             eyeDragAudioSource.Stop();
@@ -367,7 +397,7 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (mirrorCopyMode) return;
 
-        if (!deodorantUseActive && pointerPosition != null && eyeDrag != null)
+        if (!deodorantUseActive && !mouthwashUseActive && pointerPosition != null && eyeDrag != null)
             HandleInput();
 
         UpdateDragSquishAudio();
@@ -549,14 +579,14 @@ public sealed class CharacterEyes : MonoBehaviour
         hand.transform.localScale = Vector3.one * (0.88f * referenceHeight / idleHandHeight);
         hand.sprite = deodorantIdleHand;
         hand.enabled = true;
-        lastDeodorantPointerPosition = pointerPosition.ReadValue<Vector2>();
+        lastInteractionPointerPosition = pointerPosition.ReadValue<Vector2>();
 
         const float requiredHoldDuration = 4f;
         float heldDuration = 0f;
         float emissionTimer = 0f;
         while (heldDuration < requiredHoldDuration)
         {
-            FollowPointerWithinFacePanel();
+            MoveInteractionHandWithPointer();
             if (eyeDrag.IsPressed())
             {
                 SetDeodorantSprayAudio(true);
@@ -579,6 +609,7 @@ public sealed class CharacterEyes : MonoBehaviour
             {
                 SetDeodorantSprayAudio(false);
                 StopManMoanAudio();
+        SetMouthwashAudio(false);
                 deodorantWasHeld = false;
                 // The four-second action requires one continuous hold. Releasing early cancels it.
                 hand.sprite = deodorantIdleHand;
@@ -590,6 +621,7 @@ public sealed class CharacterEyes : MonoBehaviour
 
         SetDeodorantSprayAudio(false);
         StopManMoanAudio();
+        SetMouthwashAudio(false);
         Vector3 handEnd = hand.transform.position + Vector3.down * Mathf.Max(0.5f, faceBounds.size.y * 0.55f);
         Vector3 handFrom = hand.transform.position;
         const float lowerDuration = 0.75f;
@@ -662,7 +694,7 @@ public sealed class CharacterEyes : MonoBehaviour
         if (manMoanAudioSource != null && manMoanAudioSource.isPlaying)
             manMoanAudioSource.Stop();
     }
-    private void FollowPointerWithinFacePanel()
+    private void MoveInteractionHandWithPointer()
     {
         Camera cam = viewCamera != null ? viewCamera : Camera.main;
         if (cam == null || pointerPosition == null) return;
@@ -670,11 +702,11 @@ public sealed class CharacterEyes : MonoBehaviour
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
         float depth = -cam.transform.position.z;
         Vector3 previousPointerWorld = cam.ScreenToWorldPoint(new Vector3(
-            lastDeodorantPointerPosition.x, lastDeodorantPointerPosition.y, depth));
+            lastInteractionPointerPosition.x, lastInteractionPointerPosition.y, depth));
         Vector3 currentPointerWorld = cam.ScreenToWorldPoint(new Vector3(
             pointer.x, pointer.y, depth));
         Vector3 handPosition = hand.transform.position + (currentPointerWorld - previousPointerWorld);
-        lastDeodorantPointerPosition = pointer;
+        lastInteractionPointerPosition = pointer;
 
         Vector3 viewportPosition = cam.WorldToViewportPoint(handPosition);
         viewportPosition.x = Mathf.Clamp(viewportPosition.x, 0.02f, 0.98f);
@@ -683,6 +715,154 @@ public sealed class CharacterEyes : MonoBehaviour
         handPosition.z = hand.transform.position.z;
         hand.transform.position = handPosition;
     }
+    private IEnumerator MouthwashUseSequence()
+    {
+        hand.sprite = mouthwashIdleHand;
+        MoveMouthwashHandWithPointer();
+        bool restoreMouth = mouthVisual != null && mouthVisual.enabled;
+        const float requiredHoldDuration = 4f;
+        float heldDuration = 0f;
+
+        while (heldDuration < requiredHoldDuration)
+        {
+            Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+            if (eyeDrag.WasPressedThisFrame() && IsPointerOverMouth(pointer))
+            {
+                if (mouthVisual != null) mouthVisual.enabled = false;
+                hand.sprite = mouthwashHoldHand != null ? mouthwashHoldHand : mouthwashIdleHand;
+                MoveMouthwashHandWithPointer();
+                SetMouthwashAudio(true);
+
+                while (eyeDrag.IsPressed() && heldDuration < requiredHoldDuration)
+                {
+                    heldDuration += Time.deltaTime;
+                    yield return null;
+                }
+
+                SetMouthwashAudio(false);
+                if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
+
+                if (heldDuration >= requiredHoldDuration)
+                    break;
+
+                // An early release pauses the action. The player can move the bottle
+                // again and resume by pressing over the mouth; held progress is kept.
+                hand.sprite = mouthwashIdleHand;
+                MoveMouthwashHandWithPointer();
+            }
+            else if (!eyeDrag.IsPressed())
+            {
+                MoveMouthwashHandWithPointer();
+            }
+
+            yield return null;
+        }
+
+        SetMouthwashAudio(false);
+        if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
+        hand.sprite = pointingHand != null ? pointingHand : originalHandSprite;
+        hand.transform.localScale = originalHandScale;
+        hand.transform.localRotation = originalHandRotation;
+        hand.enabled = true;
+        mouthwashUseActive = false;
+    }
+    private void SetMouthwashAudio(bool shouldPlay)
+    {
+        if (mouthwashAudioSource == null && mouthwashSwishingSound != null)
+        {
+            mouthwashAudioSource = gameObject.AddComponent<AudioSource>();
+            mouthwashAudioSource.playOnAwake = false;
+            mouthwashAudioSource.spatialBlend = 0f;
+        }
+        if (mouthwashAudioSource == null) return;
+
+        if (shouldPlay && mouthwashSwishingSound != null)
+        {
+            if (mouthwashAudioSource.clip != mouthwashSwishingSound || !mouthwashAudioSource.loop)
+            {
+                mouthwashAudioSource.Stop();
+                mouthwashAudioSource.clip = mouthwashSwishingSound;
+                mouthwashAudioSource.loop = true;
+            }
+            if (!mouthwashAudioSource.isPlaying) mouthwashAudioSource.Play();
+        }
+        else if (mouthwashAudioSource.isPlaying)
+        {
+            mouthwashAudioSource.Stop();
+        }
+    }
+    private void MoveMouthwashHandWithPointer()
+    {
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        if (cam == null || pointerPosition == null || hand == null) return;
+
+        // Keep the fingertip inside the face panel so it never vanishes when the mouse
+        // drifts over the divider or the world panel.
+        Rect panel = cam.pixelRect;
+        Vector2 screen = pointerPosition.ReadValue<Vector2>();
+        const float edgeInset = 2f;
+        screen.x = Mathf.Clamp(screen.x, panel.xMin + edgeInset, panel.xMax - edgeInset);
+        screen.y = Mathf.Clamp(screen.y, panel.yMin + edgeInset, panel.yMax - edgeInset);
+
+        Vector3 pointerWorld = cam.ScreenToWorldPoint(new Vector3(
+            screen.x, screen.y, -cam.transform.position.z));
+        pointerWorld.z = hand.transform.position.z;
+        hand.enabled = true;
+        hand.transform.localScale = Vector3.one * 0.88f;
+        hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
+        hand.transform.position = pointerWorld - GetMouthwashBottleTipOffset();
+    }
+
+    private Vector3 GetMouthwashBottleTipOffset()
+    {
+        if (hand == null || hand.sprite == null) return Vector3.zero;
+
+        // The sprite pivot is centered, while the bottle neck is near its upper-left
+        // edge. Offset the hand so the actual tip, rather than its center, tracks the mouse.
+        Bounds spriteBounds = hand.sprite.bounds;
+        Vector3 localTipOffset = new Vector3(
+            mouthwashBottleTipNormalized.x * spriteBounds.size.x,
+            mouthwashBottleTipNormalized.y * spriteBounds.size.y,
+            0f);
+        return hand.transform.TransformVector(localTipOffset);
+    }
+    private bool IsPointerOverMouth(Vector2 screenPointer)
+    {
+        Camera cam = viewCamera != null ? viewCamera : Camera.main;
+        if (cam == null || mouthVisual == null || !mouthVisual.enabled || !cam.pixelRect.Contains(screenPointer))
+            return false;
+
+        // Test in screen space so the mouth target lines up with what the player sees,
+        // even though the face camera only renders into the left portion of the window.
+        Bounds bounds = mouthVisual.bounds;
+        Vector3 min = bounds.min;
+        Vector3 max = bounds.max;
+        Rect mouthRect = Rect.MinMaxRect(float.PositiveInfinity, float.PositiveInfinity,
+            float.NegativeInfinity, float.NegativeInfinity);
+        for (int x = 0; x <= 1; x++)
+        for (int y = 0; y <= 1; y++)
+        for (int z = 0; z <= 1; z++)
+        {
+            Vector3 corner = new Vector3(x == 0 ? min.x : max.x,
+                y == 0 ? min.y : max.y, z == 0 ? min.z : max.z);
+            Vector3 projected = cam.WorldToScreenPoint(corner);
+            mouthRect.xMin = Mathf.Min(mouthRect.xMin, projected.x);
+            mouthRect.yMin = Mathf.Min(mouthRect.yMin, projected.y);
+            mouthRect.xMax = Mathf.Max(mouthRect.xMax, projected.x);
+            mouthRect.yMax = Mathf.Max(mouthRect.yMax, projected.y);
+        }
+
+        // Keep the target close to the visible mouth: the bottle tip must reach the
+        // mouth, with only a small cushion for comfortable clicking.
+        float paddingX = Mathf.Max(12f, mouthRect.width * 0.08f);
+        float paddingY = Mathf.Max(12f, mouthRect.height * 0.08f);
+        mouthRect.xMin = Mathf.Max(mouthRect.xMin - paddingX, cam.pixelRect.xMin);
+        mouthRect.xMax = Mathf.Min(mouthRect.xMax + paddingX, cam.pixelRect.xMax);
+        mouthRect.yMin = Mathf.Max(mouthRect.yMin - paddingY, cam.pixelRect.yMin);
+        mouthRect.yMax = Mathf.Min(mouthRect.yMax + paddingY, cam.pixelRect.yMax);
+        return mouthRect.Contains(screenPointer);
+    }
+
     private Bounds GetFaceBounds()
     {
         SpriteRenderer[] renderers = GetComponentsInChildren<SpriteRenderer>(true);

@@ -111,6 +111,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private Color rightEyeBaseColor;
     private bool previousCursorVisible;
     private CursorLockMode previousCursorLockState;
+    private bool mouthwashCursorConfined;
     private const float DoubleVisionAlpha = 0.48f;
 
     private void Awake()
@@ -238,6 +239,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private void OnDisable()
     {
         if (eyeMap != null) eyeMap.Disable();
+        mouthwashCursorConfined = false;
         draggedEye = DraggedEye.None;
 
         if (Application.isPlaying)
@@ -460,6 +462,42 @@ public sealed class EyeGazeController : MonoBehaviour
         UpdateMirrorCharacter();
     }
 
+    private void ConfineCursorToLeftPanel(Vector2 pointer)
+    {
+        if (leftPanel == null || Mouse.current == null) return;
+
+        // Let the pointer enter the face area from the world side, then keep it there
+        // for the mouth interaction. Unity's built-in Confined mode only supports the
+        // whole game window, so warp at the panel boundary instead.
+        if (!mouthwashCursorConfined)
+        {
+            if (!RectTransformUtility.RectangleContainsScreenPoint(leftPanel, pointer, null)) return;
+            mouthwashCursorConfined = true;
+        }
+
+        Vector3[] corners = new Vector3[4];
+        leftPanel.GetWorldCorners(corners);
+        Rect panelRect = new Rect(float.PositiveInfinity, float.PositiveInfinity,
+            float.NegativeInfinity, float.NegativeInfinity);
+        Canvas canvas = leftPanel.GetComponentInParent<Canvas>();
+        Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+            ? canvas.worldCamera : null;
+        for (int i = 0; i < corners.Length; i++)
+        {
+            Vector2 screenCorner = RectTransformUtility.WorldToScreenPoint(uiCamera, corners[i]);
+            panelRect.xMin = Mathf.Min(panelRect.xMin, screenCorner.x);
+            panelRect.yMin = Mathf.Min(panelRect.yMin, screenCorner.y);
+            panelRect.xMax = Mathf.Max(panelRect.xMax, screenCorner.x);
+            panelRect.yMax = Mathf.Max(panelRect.yMax, screenCorner.y);
+        }
+
+        const float inset = 2f;
+        Vector2 confinedPointer = new Vector2(
+            Mathf.Clamp(pointer.x, panelRect.xMin + inset, panelRect.xMax - inset),
+            Mathf.Clamp(pointer.y, panelRect.yMin + inset, panelRect.yMax - inset));
+        if ((confinedPointer - pointer).sqrMagnitude > 0.01f)
+            Mouse.current.WarpCursorPosition(confinedPointer);
+    }
     private void Update()
     {
         bool uiEyesReady = leftEyeRect != null && rightEyeRect != null && leftPupil != null && rightPupil != null;
@@ -468,11 +506,17 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
-        if (grabRoutine != null || (characterEyes != null && characterEyes.IsUsingDeodorant))
+        bool mouthwashActive = characterEyes != null && characterEyes.IsUsingMouthwash;
+        if (grabRoutine != null || (characterEyes != null && (characterEyes.IsUsingDeodorant || mouthwashActive)))
         {
             Cursor.visible = false;
+            if (mouthwashActive)
+                ConfineCursorToLeftPanel(pointer);
+            else
+                mouthwashCursorConfined = false;
             return;
         }
+        mouthwashCursorConfined = false;
 
         bool releasedEyeDrag = eyeDrag.WasReleasedThisFrame() &&
             (draggedEye != DraggedEye.None || characterEyeDragActive);
@@ -854,6 +898,8 @@ public sealed class EyeGazeController : MonoBehaviour
         UpdateSequenceLabelVisibility();
         if (target == deodorantTarget && characterEyes != null)
             characterEyes.BeginDeodorantUse();
+        else if (target == mouthwashTarget && characterEyes != null)
+            characterEyes.BeginMouthwashUse();
     }
 
     private Image CreateGrabHand()
