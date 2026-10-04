@@ -82,6 +82,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private float dragSquishBasePitch = 1f;
     private float dragSquishPitchPhase;
     private bool faceTapPending;
+    private bool mirrorCopyMode;
     private Vector2 dragStartPointer;
     private Vector2 dragStartPupil;
     private Vector3 leftBrowRest;
@@ -112,6 +113,105 @@ public sealed class CharacterEyes : MonoBehaviour
         SetAim(rightEye, right);
     }
 
+    // The mirror uses a visual copy of this face and follows its live animated pose.
+    public void SetMirrorCopyMode()
+    {
+        mirrorCopyMode = true;
+        pointerPosition = null;
+        eyeDrag = null;
+
+        foreach (AudioSource source in GetComponents<AudioSource>())
+        {
+            source.Stop();
+            source.enabled = false;
+        }
+    }
+    // Copies all animated child transforms and sprite states into the mirror while keeping its fitted root transform.
+    public void CopyVisualPoseFrom(CharacterEyes source)
+    {
+        if (source == null) return;
+        CopyChildVisualPose(source.transform, transform);
+
+        // Copy the driven eye parts directly as well. These references are serialized on
+        // CharacterEyes, so pupil and eyelid motion does not depend on child order matching.
+        CopyEyePose(source.leftEye, leftEye);
+        CopyEyePose(source.rightEye, rightEye);
+
+        if (mirrorCopyMode)
+            KeepMirrorEyesVisible();
+    }
+
+    private static void CopyChildVisualPose(Transform source, Transform target)
+    {
+        for (int i = 0; i < source.childCount; i++)
+        {
+            Transform sourceChild = source.GetChild(i);
+            Transform targetChild = target.Find(sourceChild.name);
+            if (targetChild == null) continue;
+
+            if (targetChild.gameObject.activeSelf != sourceChild.gameObject.activeSelf)
+                targetChild.gameObject.SetActive(sourceChild.gameObject.activeSelf);
+            CopyLocalTransform(sourceChild, targetChild);
+
+            SpriteRenderer sourceSprite = sourceChild.GetComponent<SpriteRenderer>();
+            SpriteRenderer targetSprite = targetChild.GetComponent<SpriteRenderer>();
+            if (sourceSprite != null && targetSprite != null)
+            {
+                targetSprite.enabled = sourceSprite.enabled;
+                targetSprite.sprite = sourceSprite.sprite;
+                targetSprite.color = sourceSprite.color;
+                targetSprite.flipX = sourceSprite.flipX;
+                targetSprite.flipY = sourceSprite.flipY;
+            }
+
+            CopyChildVisualPose(sourceChild, targetChild);
+        }
+    }
+
+    private static void CopyEyePose(Eye source, Eye target)
+    {
+        if (source == null || target == null) return;
+        CopyLocalTransform(source.pupil, target.pupil);
+        CopyLocalTransform(source.topLid, target.topLid);
+        CopyLocalTransform(source.bottomLid, target.bottomLid);
+        CopyRendererPose(source.eyeBall, target.eyeBall);
+        CopyRendererPose(source.pupil != null ? source.pupil.GetComponent<SpriteRenderer>() : null,
+            target.pupil != null ? target.pupil.GetComponent<SpriteRenderer>() : null);
+    }
+
+    private static void CopyLocalTransform(Transform source, Transform target)
+    {
+        if (source == null || target == null) return;
+        target.localPosition = source.localPosition;
+        target.localRotation = source.localRotation;
+        target.localScale = source.localScale;
+    }
+
+    private static void CopyRendererPose(SpriteRenderer source, SpriteRenderer target)
+    {
+        if (source == null || target == null) return;
+        target.enabled = source.enabled;
+        target.sprite = source.sprite;
+        target.color = source.color;
+        target.flipX = source.flipX;
+        target.flipY = source.flipY;
+    }
+
+    private void KeepMirrorEyesVisible()
+    {
+        // The face art uses SpriteMasks for eyelids. Their sorting ranges overlap the
+        // mirror's remapped sprite orders, which can leave the copied eyes fully covered.
+        // The mirror has no blink animation, so show the copied eye and pupil sprites directly.
+        foreach (SpriteMask mask in GetComponentsInChildren<SpriteMask>(true))
+            mask.enabled = false;
+
+        foreach (SpriteRenderer sprite in GetComponentsInChildren<SpriteRenderer>(true))
+        {
+            sprite.maskInteraction = SpriteMaskInteraction.None;
+            if (sprite.gameObject.name.IndexOf("lid", System.StringComparison.OrdinalIgnoreCase) >= 0)
+                sprite.enabled = false;
+        }
+    }
     private void SetAim(Eye eye, Vector2 aim)
     {
         if (eye.root == null || eye.pupil == null) return;
@@ -213,6 +313,8 @@ public sealed class CharacterEyes : MonoBehaviour
 
     private void Update()
     {
+        if (mirrorCopyMode) return;
+
         if (pointerPosition != null && eyeDrag != null)
             HandleInput();
 

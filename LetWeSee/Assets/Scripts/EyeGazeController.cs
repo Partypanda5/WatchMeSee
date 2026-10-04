@@ -29,6 +29,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform mouthwashTarget;
     [SerializeField] private Transform mirrorTarget;
     [SerializeField] private RawImage rightEyeView;
+    [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
+    [SerializeField, Range(0.2f, 1f)] private float mirrorFaceHeightRatio = 0.88f;
 
     [Header("Tuning")]
     [SerializeField, Range(0f, 30f)] private float pupilTravel = 14f;
@@ -79,6 +81,12 @@ public sealed class EyeGazeController : MonoBehaviour
     private readonly List<RawImage> fisheyeImages = new List<RawImage>();
     private readonly List<Material> originalFisheyeMaterials = new List<Material>();
     private readonly List<Material> runtimeFisheyeMaterials = new List<Material>();
+
+
+    private CharacterEyes mirrorCharacterEyes;
+    private SpriteRenderer mirrorFrameRenderer;
+    private SpriteRenderer mirrorSurfaceRenderer;
+    private SpriteRenderer[] mirrorCharacterParts = new SpriteRenderer[0];
     private Canvas grabCanvas;
     private Image grabHandImage;
     private Coroutine grabRoutine;
@@ -112,7 +120,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (rightEyeImage != null) rightEyeBaseColor = rightEyeImage.color;
         if (rightPupil != null) rightPupilStart = rightPupil.anchoredPosition;
         if (rightEyeView != null) rightImageColor = rightEyeView.color;
-        SetupFisheyeEffect();
+
 
         leftAim = RandomStartingAim();
         rightAim = RandomStartingAim();
@@ -130,6 +138,8 @@ public sealed class EyeGazeController : MonoBehaviour
             mirrorTarget = GameObject.Find("MirrorTarget").transform;
 
         EnsureSequenceTargets();
+        CreateMirrorCharacter();
+        SetupFisheyeEffect();
         CacheFocusRayRenderers();
         if (inputActions == null) return;
         eyeMap = inputActions.FindActionMap("EyeControls", true);
@@ -420,6 +430,164 @@ public sealed class EyeGazeController : MonoBehaviour
 
     }
 
+    private void CreateMirrorCharacter()
+    {
+        if (characterEyes == null || mirrorTarget == null) return;
+
+        SpriteRenderer[] mirrorParts = mirrorTarget.GetComponentsInChildren<SpriteRenderer>(true);
+        float largestSpriteArea = 0f;
+        foreach (SpriteRenderer candidate in mirrorParts)
+        {
+            // The mirror surface is a large sprite too, but it must stay behind the reflected character.
+            if (candidate == null || candidate.gameObject.name == "Reflection" || candidate.sprite == null || candidate.sprite.texture == null ||
+                candidate.sprite.texture.width < 64 || candidate.sprite.texture.height < 64)
+                continue;
+
+            float area = candidate.bounds.size.x * candidate.bounds.size.y;
+            if (area > largestSpriteArea)
+            {
+                largestSpriteArea = area;
+                mirrorFrameRenderer = candidate;
+            }
+        }
+
+        if (mirrorFrameRenderer == null) return;
+
+        foreach (Transform child in mirrorTarget)
+        {
+            if (child.name == "Reflection")
+            {
+                mirrorSurfaceRenderer = child.GetComponent<SpriteRenderer>();
+                break;
+            }
+        }
+        Bounds mirrorSurfaceBounds = mirrorSurfaceRenderer != null
+            ? mirrorSurfaceRenderer.bounds
+            : mirrorFrameRenderer.bounds;
+        if (mirrorSurfaceRenderer != null)
+            mirrorSurfaceRenderer.sortingOrder = -1;
+
+        GameObject mirrorFace = Instantiate(characterEyes.gameObject, mirrorTarget, false);
+        mirrorFace.name = "MirrorCharacterFace";
+        mirrorCharacterEyes = mirrorFace.GetComponent<CharacterEyes>();
+        if (mirrorCharacterEyes != null) mirrorCharacterEyes.SetMirrorCopyMode();
+
+        mirrorFace.transform.localPosition = new Vector3(0f, 0f, 0.18f);
+        mirrorFace.transform.localRotation = Quaternion.identity;
+        mirrorFace.transform.localScale = characterEyes.transform.localScale;
+
+        SpriteRenderer[] faceParts = mirrorFace.GetComponentsInChildren<SpriteRenderer>(true);
+        mirrorCharacterParts = faceParts;
+        Bounds faceBounds = default;
+        bool hasFaceBounds = false;
+        int minimumFaceSortingOrder = int.MaxValue;
+        int maximumFaceSortingOrder = int.MinValue;
+        foreach (SpriteRenderer part in faceParts)
+        {
+            if (part == null) continue;
+            if (part.sprite == null) continue;
+            minimumFaceSortingOrder = Mathf.Min(minimumFaceSortingOrder, part.sortingOrder);
+            maximumFaceSortingOrder = Mathf.Max(maximumFaceSortingOrder, part.sortingOrder);
+            if (part.gameObject.name == "Hand") continue;
+            if (!hasFaceBounds)
+            {
+                faceBounds = part.bounds;
+                hasFaceBounds = true;
+            }
+            else
+            {
+                faceBounds.Encapsulate(part.bounds);
+            }
+        }
+
+        if (!hasFaceBounds) return;
+
+        float availableWidth = mirrorSurfaceBounds.size.x * mirrorFaceWidthRatio;
+        float availableHeight = mirrorSurfaceBounds.size.y * mirrorFaceHeightRatio;
+        float fitScale = Mathf.Min(availableWidth / Mathf.Max(0.001f, faceBounds.size.x),
+            availableHeight / Mathf.Max(0.001f, faceBounds.size.y));
+        mirrorFace.transform.localScale *= fitScale;
+        mirrorFace.transform.localScale = new Vector3(-Mathf.Abs(mirrorFace.transform.localScale.x),
+            mirrorFace.transform.localScale.y, mirrorFace.transform.localScale.z);
+        foreach (SpriteRenderer part in faceParts)
+            if (part != null && part.sprite != null)
+                part.sortingOrder = MapMirrorFaceSortingOrder(part.sortingOrder, minimumFaceSortingOrder, maximumFaceSortingOrder);
+        foreach (SpriteMask mask in mirrorFace.GetComponentsInChildren<SpriteMask>(true))
+        {
+            mask.backSortingOrder = MapMirrorFaceSortingOrder(mask.backSortingOrder, minimumFaceSortingOrder, maximumFaceSortingOrder);
+            mask.frontSortingOrder = MapMirrorFaceSortingOrder(mask.frontSortingOrder, minimumFaceSortingOrder, maximumFaceSortingOrder);
+        }
+
+        // Clip the reflected hand to the mirror glass so it never appears over the frame or outside the mirror.
+        if (mirrorSurfaceRenderer != null && mirrorSurfaceRenderer.sprite != null)
+        {
+            GameObject handMaskObject = new GameObject("MirrorHandMask", typeof(SpriteMask));
+            handMaskObject.transform.SetParent(mirrorTarget, false);
+            SpriteMask handMask = handMaskObject.GetComponent<SpriteMask>();
+            handMask.sprite = mirrorSurfaceRenderer.sprite;
+            handMask.isCustomRangeActive = true;
+            handMask.backSortingLayerID = mirrorSurfaceRenderer.sortingLayerID;
+            handMask.frontSortingLayerID = mirrorSurfaceRenderer.sortingLayerID;
+            handMask.backSortingOrder = 104;
+            handMask.frontSortingOrder = 106;
+            handMask.transform.localPosition = mirrorSurfaceRenderer.transform.localPosition;
+            handMask.transform.localRotation = mirrorSurfaceRenderer.transform.localRotation;
+            handMask.transform.localScale = mirrorSurfaceRenderer.transform.localScale;
+
+            foreach (SpriteRenderer part in faceParts)
+            {
+                if (part == null || part.gameObject.name != "Hand") continue;
+                part.sortingOrder = 105;
+                part.maskInteraction = SpriteMaskInteraction.VisibleInsideMask;
+            }
+        }
+
+        faceBounds = GetVisibleFaceBounds(faceParts, true);
+        Vector3 mirrorCenter = mirrorSurfaceBounds.center;
+        Vector3 bottomAlignedCenter = new Vector3(mirrorCenter.x,
+            mirrorSurfaceBounds.min.y + faceBounds.extents.y, mirrorCenter.z);
+        mirrorFace.transform.position += bottomAlignedCenter - faceBounds.center;
+
+        // Keep the frame above the face while leaving the transparent mirror opening clear.
+        mirrorFrameRenderer.sortingOrder = Mathf.Max(mirrorFrameRenderer.sortingOrder, 110);
+    }
+
+    private static int MapMirrorFaceSortingOrder(int order, int minimum, int maximum)
+    {
+        if (maximum <= minimum) return 50;
+        return order + 8 - minimum;
+    }
+
+    private static Bounds GetVisibleFaceBounds(SpriteRenderer[] faceParts, bool excludeHand)
+    {
+        Bounds result = default;
+        bool found = false;
+        foreach (SpriteRenderer part in faceParts)
+        {
+            if (part == null || part.sprite == null || (excludeHand && part.gameObject.name == "Hand")) continue;
+            if (!found)
+            {
+                result = part.bounds;
+                found = true;
+            }
+            else
+            {
+                result.Encapsulate(part.bounds);
+            }
+        }
+        return result;
+    }
+
+    private void UpdateMirrorCharacter()
+    {
+        if (characterEyes == null || mirrorCharacterEyes == null) return;
+        mirrorCharacterEyes.CopyVisualPoseFrom(characterEyes);
+        if (mirrorSurfaceRenderer == null) return;
+
+        Bounds characterBounds = GetVisibleFaceBounds(mirrorCharacterParts, true);
+        float bottomCorrection = mirrorSurfaceRenderer.bounds.min.y - characterBounds.min.y;
+        mirrorCharacterEyes.transform.position += Vector3.up * bottomCorrection;
+    }
     private void SetupFisheyeEffect()
     {
         if (worldPanel == null) return;
@@ -455,6 +623,11 @@ public sealed class EyeGazeController : MonoBehaviour
         leftAim = Vector2.zero;
         rightAim = Vector2.zero;
         characterEyes.SetAims(leftAim, rightAim);
+    }
+
+    private void LateUpdate()
+    {
+        UpdateMirrorCharacter();
     }
 
     private void Update()
@@ -974,6 +1147,13 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         ResetAlignmentSnap();
 
+        // MirrorTarget contains the mirror art and reflection, so never scale this root for the snap pop.
+        if (target == mirrorTarget)
+        {
+            grownFocusTarget = target;
+            return;
+        }
+
         snappingTarget = target;
         snappingTargetOriginalScale = target.localScale;
         alignmentSnapRoutine = StartCoroutine(AlignmentSnapAnimation(target, snappingTargetOriginalScale));
@@ -1078,6 +1258,8 @@ public sealed class EyeGazeController : MonoBehaviour
         for (int i = 0; i < fisheyeImages.Count; i++)
         {
             if (fisheyeImages[i] == null || runtimeFisheyeMaterials[i] == null) continue;
+
+
             Camera eyeCamera = fisheyeImages[i] == rightEyeView ? rightCamera : leftCamera;
             CenterRayHit rayHit = eyeCamera == rightCamera ? rightHit : leftHit;
             SetFocusBlurForCamera(runtimeFisheyeMaterials[i], eyeCamera, rayHit, target, bothRaysHitTarget, blurAmount);
@@ -1091,6 +1273,7 @@ public sealed class EyeGazeController : MonoBehaviour
         material.SetFloat("_BlurStrength", blurAmount);
         Vector3 centerView = eyeCamera.WorldToViewportPoint(rayHit.Point);
         Vector2 focusCenter = FisheyeSourceToOutputUv(new Vector2(centerView.x, centerView.y));
+
         float focusRadius = focusPointRadius;
 
         bool rayHitsActiveTarget = RendererBelongsToTarget(rayHit.Renderer, target);
