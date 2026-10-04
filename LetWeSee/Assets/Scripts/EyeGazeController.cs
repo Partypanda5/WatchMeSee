@@ -36,19 +36,25 @@ public sealed class EyeGazeController : MonoBehaviour
 
     [Header("Tuning")]
     [SerializeField, Range(0f, 30f)] private float pupilTravel = 14f;
-    [SerializeField, Range(0f, 12f)] private float cameraTravel = 8f;
+    [SerializeField, Range(0f, 12f)] private float cameraTravel = 10f;
+    [Tooltip("Distance between the two eye cameras on the x axis, centred on where they start. Can be changed while playing.")]
+    [SerializeField, Range(0f, 5f)] private float eyeSeparation = 1f;
+    [Tooltip("When the points the two eyes look at are this close, the moving eye snaps onto the other eye's point.")]
+    [SerializeField, Range(0f, 10f)] private float gazeSnapDistance = 0.2f;
+    [Tooltip("How far the moving eye's own point has to get from the other's before the snap breaks off. Keep it above the snap distance.")]
+    [SerializeField, Range(0f, 10f)] private float gazeSnapReleaseDistance = 0.3f;
     [SerializeField, Range(0f, 45f)] private float cameraAimRotationDegrees = 28f;
     [SerializeField, Range(0f, 0.8f)] private float fisheyeStrength = 0.45f;
     [SerializeField, Range(0f, 1f)] private float maximumMisalignmentBlur = 1f;
-    [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 20f;
+    [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 12f;
     [SerializeField, Range(0.1f, 45f)] private float maximumCameraSeparationForBlurDegrees = 20f;
     [SerializeField, Range(1f, 100f)] private float focusRayDistance = 40f;
-    [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.6f;
-    [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.03f;
+    [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.4f;
+    [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.1f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
     [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
-    [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.2f;
+    [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.01f;
     [SerializeField, Range(0f, 1f)] private float startingEyeAimRange = 0.7f;
 
 
@@ -75,6 +81,11 @@ public sealed class EyeGazeController : MonoBehaviour
     private readonly HashSet<Transform> collectedItems = new HashSet<Transform>();
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
+    private bool gazeSnapped;
+    private Renderer[] gazeRenderers;
+    private bool rightEyeMovedLast = true;
+    private Vector2 previousLeftAim;
+    private Vector2 previousRightAim;
     private Quaternion leftCameraStartRotation;
     private Quaternion rightCameraStartRotation;
     private Vector2 leftPupilStart;
@@ -101,7 +112,6 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool previousCursorVisible;
     private CursorLockMode previousCursorLockState;
     private const float DoubleVisionAlpha = 0.48f;
-    private static Sprite runtimePlaceholderSprite;
 
     private void Awake()
     {
@@ -159,234 +169,28 @@ public sealed class EyeGazeController : MonoBehaviour
 
 
 
+    // The bathroom items and room are authored in the scene; nothing is generated here.
     private void EnsureSequenceTargets()
     {
-        Sprite placeholderSprite = GetRuntimePlaceholderSprite();
         if (deodorantTarget == null) deodorantTarget = FindTarget("DeodorantTarget");
         if (mouthwashTarget == null) mouthwashTarget = FindTarget("MouthwashTarget");
         if (toothbrushTarget == null) toothbrushTarget = FindTarget("ToothbrushTarget");
         if (mirrorTarget == null) mirrorTarget = FindTarget("MirrorTarget");
 
-        if (deodorantTarget == null || mouthwashTarget == null || toothbrushTarget == null || mirrorTarget == null)
-        {
-
-            if (deodorantTarget == null)
-                deodorantTarget = CreateBottleTarget("DeodorantTarget", "DEODORANT", new Vector2(-3.1f, 0.4f), placeholderSprite,
-                    new Color(0.88f, 0.87f, 0.78f), new Color(0.24f, 0.25f, 0.28f), new Color(0.78f, 0.63f, 0.35f), false);
-            if (mouthwashTarget == null)
-                mouthwashTarget = CreateBottleTarget("MouthwashTarget", "MOUTH WASH", new Vector2(0f, 0.4f), placeholderSprite,
-                    new Color(0.30f, 0.75f, 0.80f), new Color(0.10f, 0.23f, 0.40f), new Color(0.92f, 0.93f, 0.84f), true);
-            if (toothbrushTarget == null)
-                toothbrushTarget = CreateToothbrushTarget(placeholderSprite, new Vector2(2f, 0.4f));
-            if (mirrorTarget == null)
-                mirrorTarget = CreateMirrorTarget("MirrorTarget", new Vector2(3f, 0.55f), placeholderSprite);
-        }
-
         sequenceEnabled = deodorantTarget != null && mouthwashTarget != null && toothbrushTarget != null && mirrorTarget != null;
         if (sequenceEnabled)
         {
             cameraTravel = Mathf.Max(cameraTravel, 10f);
-            EnsureRoomBackdrop(placeholderSprite);
-            EnsureBathroomEnvironment(placeholderSprite);
-        }
-        if (sequenceEnabled)
             UpdateSequenceLabelVisibility();
+        }
         if (sequenceEnabled && focusTarget != null && focusTarget != deodorantTarget)
             focusTarget.gameObject.SetActive(false);
     }
-
-
-    private static Sprite GetRuntimePlaceholderSprite()
-    {
-        if (runtimePlaceholderSprite == null)
-        {
-            Texture2D whiteTexture = Texture2D.whiteTexture;
-            runtimePlaceholderSprite = Sprite.Create(whiteTexture,
-                new Rect(0f, 0f, whiteTexture.width, whiteTexture.height), new Vector2(0.5f, 0.5f));
-        }
-        return runtimePlaceholderSprite;
-    }
-
-    private void EnsureRoomBackdrop(Sprite sprite)
-    {
-        if (GameObject.Find("BathroomRoomBackdrop") != null) return;
-        float halfHeight = leftCamera != null ? leftCamera.orthographicSize : 5f;
-        float aspect = leftCamera != null && leftCamera.targetTexture != null
-            ? (float)leftCamera.targetTexture.width / leftCamera.targetTexture.height : 1f;
-        float width = 2f * (halfHeight * aspect + cameraTravel + 1f);
-        float height = 2f * (halfHeight + cameraTravel + 1f);
-        var wall = new GameObject("BathroomRoomBackdrop", typeof(SpriteRenderer));
-        wall.transform.position = new Vector3((leftCameraStart.x + rightCameraStart.x) * 0.5f,
-            (leftCameraStart.y + rightCameraStart.y) * 0.5f, 2f);
-        wall.transform.localScale = new Vector3(width, height, 1f);
-        var renderer = wall.GetComponent<SpriteRenderer>();
-        renderer.sprite = sprite;
-        renderer.color = new Color(0.34f, 0.39f, 0.43f, 1f);
-        renderer.sortingOrder = -30;
-        Color grout = new Color(0.66f, 0.70f, 0.72f, 0.22f);
-        for (float x = -width * 0.5f + 2f; x < width * 0.5f; x += 2.5f)
-            AddWorldPart(wall.transform, "TileSeamVertical", sprite, new Vector2(x, 0f), new Vector2(0.025f, height), grout, -29);
-        for (float y = -height * 0.5f + 2f; y < height * 0.5f; y += 2.5f)
-            AddWorldPart(wall.transform, "TileSeamHorizontal", sprite, new Vector2(0f, y), new Vector2(width, 0.025f), grout, -29);
-    }
-
-    private void EnsureBathroomEnvironment(Sprite sprite)
-    {
-        if (GameObject.Find("BathroomEnvironment") != null) return;
-
-        Transform room = new GameObject("BathroomEnvironment").transform;
-
-        AddWorldPart(room, "BathroomFloor", sprite, new Vector2(0f, -4.25f), new Vector2(38f, 1.5f),
-            new Color(0.25f, 0.31f, 0.34f), -20);
-        AddWorldPart(room, "FloorEdge", sprite, new Vector2(0f, -3.48f), new Vector2(38f, 0.08f),
-            new Color(0.75f, 0.78f, 0.77f), -19);
-
-        AddWorldPart(room, "SinkCabinet", sprite, new Vector2(0f, -2.03f), new Vector2(6.6f, 1.48f),
-            new Color(0.48f, 0.57f, 0.60f), 1);
-        AddWorldPart(room, "LeftCabinetDoor", sprite, new Vector2(-1.72f, -2.02f), new Vector2(2.95f, 1.24f),
-            new Color(0.58f, 0.66f, 0.67f), 2);
-        AddWorldPart(room, "RightCabinetDoor", sprite, new Vector2(1.72f, -2.02f), new Vector2(2.95f, 1.24f),
-            new Color(0.58f, 0.66f, 0.67f), 2);
-        AddWorldPart(room, "CabinetCenterSeam", sprite, new Vector2(0f, -2.02f), new Vector2(0.045f, 1.2f),
-            new Color(0.31f, 0.40f, 0.43f), 3);
-        AddWorldPart(room, "LeftCabinetHandle", sprite, new Vector2(-0.35f, -2.02f), new Vector2(0.12f, 0.42f),
-            new Color(0.82f, 0.82f, 0.76f), 3);
-        AddWorldPart(room, "RightCabinetHandle", sprite, new Vector2(0.35f, -2.02f), new Vector2(0.12f, 0.42f),
-            new Color(0.82f, 0.82f, 0.76f), 3);
-        AddWorldPart(room, "SinkCountertop", sprite, new Vector2(0f, -1.25f), new Vector2(7.1f, 0.24f),
-            new Color(0.85f, 0.84f, 0.77f), 3);
-        AddWorldPart(room, "SinkBasinRim", sprite, new Vector2(0f, -1.10f), new Vector2(2.15f, 0.27f),
-            new Color(0.58f, 0.69f, 0.70f), 4);
-        AddWorldPart(room, "SinkBasin", sprite, new Vector2(0f, -1.08f), new Vector2(1.72f, 0.16f),
-            new Color(0.35f, 0.48f, 0.51f), 5);
-        AddWorldPart(room, "FaucetStem", sprite, new Vector2(0f, -0.83f), new Vector2(0.12f, 0.42f),
-            new Color(0.79f, 0.82f, 0.80f), 4);
-        AddWorldPart(room, "FaucetSpout", sprite, new Vector2(0.20f, -0.62f), new Vector2(0.48f, 0.10f),
-            new Color(0.79f, 0.82f, 0.80f), 4);
-        AddWorldPart(room, "BathMat", sprite, new Vector2(0f, -3.45f), new Vector2(3.8f, 0.38f),
-            new Color(0.46f, 0.62f, 0.62f), 1);
-
-        Transform toilet = new GameObject("BathroomToilet").transform;
-        toilet.SetParent(room, false);
-        toilet.localPosition = new Vector3(-6.6f, -3.0f, 0f);
-        AddWorldPart(toilet, "ToiletPedestal", sprite, new Vector2(0f, -0.18f), new Vector2(0.78f, 0.70f),
-            new Color(0.80f, 0.83f, 0.79f), 2);
-        AddWorldPart(toilet, "ToiletBowl", sprite, new Vector2(0f, 0.23f), new Vector2(1.48f, 0.62f),
-            new Color(0.88f, 0.88f, 0.81f), 3);
-        AddWorldPart(toilet, "ToiletSeat", sprite, new Vector2(0f, 0.48f), new Vector2(1.16f, 0.18f),
-            new Color(0.58f, 0.67f, 0.68f), 4);
-        AddWorldPart(toilet, "ToiletTank", sprite, new Vector2(0f, 1.14f), new Vector2(1.12f, 1.12f),
-            new Color(0.83f, 0.85f, 0.80f), 2);
-        AddWorldPart(toilet, "ToiletTankLid", sprite, new Vector2(0f, 1.73f), new Vector2(1.28f, 0.16f),
-            new Color(0.91f, 0.90f, 0.83f), 3);
-
-        AddWorldPart(room, "WindowFrame", sprite, new Vector2(-6.6f, 2.75f), new Vector2(2.65f, 1.95f),
-            new Color(0.79f, 0.82f, 0.77f), 1);
-        AddWorldPart(room, "WindowGlass", sprite, new Vector2(-6.6f, 2.75f), new Vector2(2.36f, 1.66f),
-            new Color(0.47f, 0.69f, 0.73f), 2);
-        AddWorldPart(room, "WindowCrossbar", sprite, new Vector2(-6.6f, 2.75f), new Vector2(0.08f, 1.66f),
-            new Color(0.83f, 0.84f, 0.78f), 3);
-        AddWorldPart(room, "WindowSill", sprite, new Vector2(-6.6f, 1.76f), new Vector2(2.85f, 0.16f),
-            new Color(0.86f, 0.85f, 0.78f), 3);
-
-        AddWorldPart(room, "WallCabinet", sprite, new Vector2(6.4f, 2.85f), new Vector2(2.45f, 1.8f),
-            new Color(0.72f, 0.75f, 0.69f), 1);
-        AddWorldPart(room, "WallCabinetDoorLeft", sprite, new Vector2(5.79f, 2.85f), new Vector2(1.10f, 1.55f),
-            new Color(0.84f, 0.83f, 0.75f), 2);
-        AddWorldPart(room, "WallCabinetDoorRight", sprite, new Vector2(7.01f, 2.85f), new Vector2(1.10f, 1.55f),
-            new Color(0.84f, 0.83f, 0.75f), 2);
-        AddWorldPart(room, "TowelRail", sprite, new Vector2(6.35f, 0.50f), new Vector2(2.25f, 0.10f),
-            new Color(0.77f, 0.81f, 0.78f), 3);
-        AddWorldPart(room, "Towel", sprite, new Vector2(6.35f, -0.15f), new Vector2(1.45f, 1.08f),
-            new Color(0.67f, 0.79f, 0.75f), 2);
-        AddWorldPart(room, "TowelStripe", sprite, new Vector2(6.35f, -0.48f), new Vector2(1.45f, 0.12f),
-            new Color(0.47f, 0.66f, 0.64f), 3);
-
-        AddWorldPart(room, "ShowerBack", sprite, new Vector2(11.0f, -1.55f), new Vector2(4.4f, 4.35f),
-            new Color(0.50f, 0.65f, 0.68f), 0);
-        AddWorldPart(room, "ShowerCurtain", sprite, new Vector2(10.2f, -1.55f), new Vector2(2.65f, 4.15f),
-            new Color(0.68f, 0.76f, 0.74f, 0.92f), 1);
-        AddWorldPart(room, "ShowerCurtainStripe", sprite, new Vector2(10.2f, -1.55f), new Vector2(0.12f, 4.15f),
-            new Color(0.49f, 0.65f, 0.66f), 2);
-        AddWorldPart(room, "ShowerRail", sprite, new Vector2(10.2f, 0.64f), new Vector2(3.2f, 0.12f),
-            new Color(0.79f, 0.82f, 0.79f), 3);
-    }
-
 
     private static Transform FindTarget(string targetName)
     {
         GameObject found = GameObject.Find(targetName);
         return found != null ? found.transform : null;
-    }
-
-    private static Transform CreateBottleTarget(string objectName, string label, Vector2 position, Sprite sprite,
-        Color bodyColor, Color capColor, Color labelColor, bool wide)
-    {
-        var root = new GameObject(objectName);
-        root.transform.position = new Vector3(position.x, position.y, 0f);
-        float bodyWidth = wide ? 0.82f : 0.62f;
-        AddWorldPart(root.transform, "Bottle", sprite, Vector2.zero, new Vector2(bodyWidth, 1.35f), bodyColor, 4);
-        AddWorldPart(root.transform, "Neck", sprite, new Vector2(0f, 0.76f), new Vector2(wide ? 0.46f : 0.50f, 0.25f), bodyColor, 5);
-        AddWorldPart(root.transform, "Cap", sprite, new Vector2(0f, 0.98f), new Vector2(0.52f, 0.28f), capColor, 6);
-        AddWorldPart(root.transform, "Label", sprite, new Vector2(0f, -0.03f), new Vector2(wide ? 0.68f : 0.52f, 0.42f), labelColor, 7);
-        AddWorldText(root.transform, label, new Vector2(0f, -0.03f), wide ? 0.075f : 0.085f, new Color(0.11f, 0.16f, 0.20f), 8);
-        AddWorldText(root.transform, label, new Vector2(0f, -1.02f), 0.10f, Color.white, 8);
-        return root.transform;
-    }
-
-    private static Transform CreateToothbrushTarget(Sprite sprite, Vector2 position)
-    {
-        var root = new GameObject("ToothbrushTarget");
-        root.transform.position = new Vector3(position.x, position.y, 0f);
-        AddWorldPart(root.transform, "Handle", sprite, Vector2.zero, new Vector2(0.16f, 1.25f),
-            new Color(0.35f, 0.72f, 0.70f), 4);
-        AddWorldPart(root.transform, "BrushHead", sprite, new Vector2(0f, 0.70f), new Vector2(0.38f, 0.28f),
-            new Color(0.91f, 0.88f, 0.78f), 5);
-        AddWorldPart(root.transform, "Bristles", sprite, new Vector2(0f, 0.88f), new Vector2(0.30f, 0.12f),
-            new Color(0.55f, 0.77f, 0.82f), 6);
-        AddWorldText(root.transform, "TOOTHBRUSH", new Vector2(0f, -0.86f), 0.085f, Color.white, 8);
-        return root.transform;
-    }
-
-    private static Transform CreateMirrorTarget(string objectName, Vector2 position, Sprite sprite)
-    {
-        var root = new GameObject(objectName);
-        root.transform.position = new Vector3(position.x, position.y, 0f);
-        AddWorldPart(root.transform, "MirrorFrame", sprite, new Vector2(0f, 0.15f), new Vector2(2.1f, 1.85f), new Color(0.42f, 0.31f, 0.30f), 3);
-        AddWorldPart(root.transform, "ReflectiveGlass", sprite, new Vector2(0f, 0.15f), new Vector2(1.82f, 1.57f), new Color(0.54f, 0.78f, 0.82f), 4);
-        AddWorldPart(root.transform, "Reflection", sprite, new Vector2(-0.42f, 0.15f), new Vector2(0.16f, 1.35f), new Color(0.86f, 0.94f, 0.91f, 0.72f), 5);
-        AddWorldText(root.transform, "MIRROR", new Vector2(0f, -1.10f), 0.11f, Color.white, 8);
-        return root.transform;
-    }
-
-    private static void AddWorldPart(Transform parent, string partName, Sprite sprite, Vector2 localPosition,
-        Vector2 size, Color color, int sortingOrder)
-    {
-        var part = new GameObject(partName, typeof(SpriteRenderer));
-        part.transform.SetParent(parent, false);
-        part.transform.localPosition = new Vector3(localPosition.x, localPosition.y, 0f);
-        part.transform.localScale = new Vector3(size.x, size.y, 1f);
-        var renderer = part.GetComponent<SpriteRenderer>();
-        renderer.sprite = sprite;
-        renderer.color = color;
-        renderer.sortingOrder = sortingOrder;
-    }
-
-    private static void AddWorldText(Transform parent, string value, Vector2 localPosition,
-        float characterSize, Color color, int sortingOrder)
-    {
-        var label = new GameObject("Label", typeof(TextMesh));
-        label.transform.SetParent(parent, false);
-        label.transform.localPosition = new Vector3(localPosition.x, localPosition.y, -0.02f);
-        var text = label.GetComponent<TextMesh>();
-        text.text = value;
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 48;
-        text.characterSize = characterSize;
-        text.anchor = TextAnchor.MiddleCenter;
-        text.alignment = TextAlignment.Center;
-        text.color = color;
-        label.GetComponent<MeshRenderer>().sortingOrder = sortingOrder;
     }
 
     private void CleanPlaceholderVisuals()
@@ -755,21 +559,27 @@ public sealed class EyeGazeController : MonoBehaviour
         }
 
         Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : alignedFocusTarget;
-        Vector3 wantedLeftCamera = leftCameraStart;
-        Vector3 wantedRightCamera = rightCameraStart;
+        Vector3 eyesCenter = (leftCameraStart + rightCameraStart) * 0.5f;
+        Vector3 wantedLeftCamera = eyesCenter + Vector3.left * (eyeSeparation * 0.5f);
+        Vector3 wantedRightCamera = eyesCenter + Vector3.right * (eyeSeparation * 0.5f);
 
         Quaternion wantedLeftRotation = focused && cameraFocusTarget != null
-            ? Quaternion.LookRotation(cameraFocusTarget.position - leftCameraStart, Vector3.up)
+            ? Quaternion.LookRotation(cameraFocusTarget.position - wantedLeftCamera, Vector3.up)
             : leftCameraStartRotation * Quaternion.Euler(
                 -leftAim.y * cameraAimRotationDegrees,
                 leftAim.x * cameraAimRotationDegrees,
                 0f);
         Quaternion wantedRightRotation = focused && cameraFocusTarget != null
-            ? Quaternion.LookRotation(cameraFocusTarget.position - rightCameraStart, Vector3.up)
+            ? Quaternion.LookRotation(cameraFocusTarget.position - wantedRightCamera, Vector3.up)
             : rightCameraStartRotation * Quaternion.Euler(
                 -rightAim.y * cameraAimRotationDegrees,
                 rightAim.x * cameraAimRotationDegrees,
                 0f);
+
+        if (focused && cameraFocusTarget != null)
+            gazeSnapped = false;
+        else
+            ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
 
         leftCamera.transform.position = Vector3.Lerp(
             leftCamera.transform.position, wantedLeftCamera, Time.deltaTime * followSpeed);
@@ -787,6 +597,163 @@ public sealed class EyeGazeController : MonoBehaviour
             tint.a = Mathf.Lerp(rightEyeView.color.a, DoubleVisionAlpha, Time.deltaTime * followSpeed);
             rightEyeView.color = tint;
         }
+    }
+
+    // If the two eyes' free gaze points are close enough, turn the eye that moved last onto the other eye's point.
+    // The free points keep following the aims, so dragging on past the release distance breaks the snap.
+    private void ApplyGazeSnap(Vector3 leftPosition, Vector3 rightPosition,
+        ref Quaternion leftRotation, ref Quaternion rightRotation)
+    {
+        Vector2 leftMoved = leftAim - previousLeftAim;
+        Vector2 rightMoved = rightAim - previousRightAim;
+        if (leftMoved.sqrMagnitude > 0.000001f || rightMoved.sqrMagnitude > 0.000001f)
+            rightEyeMovedLast = rightMoved.sqrMagnitude >= leftMoved.sqrMagnitude;
+        previousLeftAim = leftAim;
+        previousRightAim = rightAim;
+
+        Vector3 leftPoint = FindGazePoint(new Ray(leftPosition, leftRotation * Vector3.forward), leftCamera);
+        Vector3 rightPoint = FindGazePoint(new Ray(rightPosition, rightRotation * Vector3.forward), rightCamera);
+        float limit = gazeSnapped ? Mathf.Max(gazeSnapDistance, gazeSnapReleaseDistance) : gazeSnapDistance;
+        gazeSnapped = Vector3.Distance(leftPoint, rightPoint) <= limit;
+
+        // Visible in the Scene view while playing: red = left eye, cyan = right eye, green when snapped.
+        Debug.DrawLine(leftPosition, leftPoint, gazeSnapped ? Color.green : Color.red);
+        Debug.DrawLine(rightPosition, rightPoint, gazeSnapped ? Color.green : Color.cyan);
+        if (!gazeSnapped) return;
+
+        // Converge on the nearer point: it's the object being looked at, not the wall behind it.
+        // On a tie, the eye that moved last is the one that turns.
+        float leftDepth = Vector3.Distance(leftPosition, leftPoint);
+        float rightDepth = Vector3.Distance(rightPosition, rightPoint);
+        bool useLeftPoint = Mathf.Abs(leftDepth - rightDepth) > 0.01f ? leftDepth < rightDepth : rightEyeMovedLast;
+
+        if (useLeftPoint)
+            rightRotation = Quaternion.LookRotation(leftPoint - rightPosition, Vector3.up);
+        else
+            leftRotation = Quaternion.LookRotation(rightPoint - leftPosition, Vector3.up);
+    }
+
+    // Where an eye ray first meets anything the eye camera can see (sprites and meshes), or the focus ray distance.
+    private Vector3 FindGazePoint(Ray ray, Camera eyeCamera)
+    {
+        if (gazeRenderers == null) gazeRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        float nearestDistance = Mathf.Max(eyeCamera.nearClipPlane, focusRayDistance);
+        foreach (Renderer candidate in gazeRenderers)
+        {
+            if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy ||
+                candidate is SpriteMask || (eyeCamera.cullingMask & (1 << candidate.gameObject.layer)) == 0)
+                continue;
+
+            if (RayHitsRenderer(ray, candidate, out float distance) &&
+                distance >= eyeCamera.nearClipPlane && distance < nearestDistance)
+                nearestDistance = distance;
+        }
+        return ray.GetPoint(nearestDistance);
+    }
+
+    // Ray test against the renderer's actual sprite or mesh triangles, so tilted planes aren't hit early by
+    // their bounding box. Falls back to the bounding box for anything without readable geometry.
+    private bool RayHitsRenderer(Ray ray, Renderer renderer, out float distance)
+    {
+        distance = 0f;
+        if (!renderer.bounds.IntersectRay(ray, out float boxDistance)) return false;
+        if (!TryGetRayShape(renderer, out Vector3[] vertices, out int[] triangles))
+        {
+            distance = boxDistance;
+            return true;
+        }
+
+        // In local space the ray keeps its world-space length, so hit distances stay in world units.
+        Matrix4x4 toLocal = renderer.transform.worldToLocalMatrix;
+        Vector3 origin = toLocal.MultiplyPoint3x4(ray.origin);
+        Vector3 direction = toLocal.MultiplyVector(ray.direction);
+        if (renderer is SpriteRenderer sprite)
+        {
+            if (sprite.flipX) { origin.x = -origin.x; direction.x = -direction.x; }
+            if (sprite.flipY) { origin.y = -origin.y; direction.y = -direction.y; }
+        }
+
+        float nearest = float.PositiveInfinity;
+        for (int i = 0; i + 2 < triangles.Length; i += 3)
+        {
+            if (RayHitsTriangle(origin, direction, vertices[triangles[i]], vertices[triangles[i + 1]],
+                    vertices[triangles[i + 2]], out float hit) && hit < nearest)
+                nearest = hit;
+        }
+        if (float.IsPositiveInfinity(nearest)) return false;
+        distance = nearest;
+        return true;
+    }
+
+    private bool TryGetRayShape(Renderer renderer, out Vector3[] vertices, out int[] triangles)
+    {
+        vertices = null;
+        triangles = null;
+        Object key = null;
+        if (renderer is SpriteRenderer sprite)
+        {
+            if (sprite.sprite == null || sprite.drawMode != SpriteDrawMode.Simple) return false;
+            key = sprite.sprite;
+        }
+        else if (renderer is MeshRenderer && renderer.GetComponent<TextMesh>() == null)
+        {
+            MeshFilter filter = renderer.GetComponent<MeshFilter>();
+            if (filter == null || filter.sharedMesh == null || !filter.sharedMesh.isReadable) return false;
+            key = filter.sharedMesh;
+        }
+        if (key == null) return false;
+
+        if (!rayShapes.TryGetValue(key, out RayShape shape))
+        {
+            shape = new RayShape();
+            if (key is Sprite spriteAsset)
+            {
+                Vector2[] points = spriteAsset.vertices;
+                shape.Vertices = new Vector3[points.Length];
+                for (int i = 0; i < points.Length; i++) shape.Vertices[i] = points[i];
+                ushort[] indices = spriteAsset.triangles;
+                shape.Triangles = new int[indices.Length];
+                for (int i = 0; i < indices.Length; i++) shape.Triangles[i] = indices[i];
+            }
+            else
+            {
+                Mesh mesh = (Mesh)key;
+                shape.Vertices = mesh.vertices;
+                shape.Triangles = mesh.triangles;
+            }
+            rayShapes[key] = shape;
+        }
+        vertices = shape.Vertices;
+        triangles = shape.Triangles;
+        return true;
+    }
+
+    private sealed class RayShape
+    {
+        public Vector3[] Vertices;
+        public int[] Triangles;
+    }
+
+    private readonly Dictionary<Object, RayShape> rayShapes = new Dictionary<Object, RayShape>();
+
+    // Möller–Trumbore, hitting either side of the triangle.
+    private static bool RayHitsTriangle(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c, out float distance)
+    {
+        distance = 0f;
+        Vector3 edge1 = b - a;
+        Vector3 edge2 = c - a;
+        Vector3 p = Vector3.Cross(direction, edge2);
+        float determinant = Vector3.Dot(edge1, p);
+        if (Mathf.Abs(determinant) < 1e-8f) return false;
+        float inverse = 1f / determinant;
+        Vector3 s = origin - a;
+        float u = Vector3.Dot(s, p) * inverse;
+        if (u < 0f || u > 1f) return false;
+        Vector3 q = Vector3.Cross(s, edge1);
+        float v = Vector3.Dot(direction, q) * inverse;
+        if (v < 0f || u + v > 1f) return false;
+        distance = Vector3.Dot(edge2, q) * inverse;
+        return distance > 0f;
     }
 
     private void UpdateArm(Vector2 screenPointer, bool overLeftPanel)
@@ -1146,7 +1113,12 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private CenterRayHit FindCenterRayHit(Camera eyeCamera)
     {
-        Ray ray = eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
+        return FindRayHit(eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f)), eyeCamera);
+    }
+
+    // Nearest sprite along the ray, or the point at the focus ray distance if nothing is hit.
+    private CenterRayHit FindRayHit(Ray ray, Camera eyeCamera)
+    {
         float nearestDistance = Mathf.Max(eyeCamera.nearClipPlane, focusRayDistance);
         SpriteRenderer nearestRenderer = null;
 
@@ -1156,7 +1128,7 @@ public sealed class EyeGazeController : MonoBehaviour
                 (eyeCamera.cullingMask & (1 << candidate.gameObject.layer)) == 0)
                 continue;
 
-            if (candidate.bounds.IntersectRay(ray, out float distance) &&
+            if (RayHitsRenderer(ray, candidate, out float distance) &&
                 distance >= eyeCamera.nearClipPlane && distance < nearestDistance)
             {
                 nearestDistance = distance;
