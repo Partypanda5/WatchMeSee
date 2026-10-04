@@ -52,6 +52,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private InputAction eyeDrag;
     private InputAction focusClick;
     private DraggedEye draggedEye;
+    private bool characterEyeDragActive;
     private Vector2 leftAim;
     private Vector2 rightAim;
     private bool focused;
@@ -62,6 +63,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private Coroutine alignmentSnapRoutine;
     private Transform snappingTarget;
     private Vector3 snappingTargetOriginalScale;
+    private Transform grownFocusTarget;
     private Transform lockedFocusTarget;
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
@@ -80,7 +82,6 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool previousCursorVisible;
     private CursorLockMode previousCursorLockState;
     private const float DoubleVisionAlpha = 0.48f;
-    private const float FocusAlpha = 0.08f;
     private static Sprite runtimePlaceholderSprite;
 
     private void Awake()
@@ -449,6 +450,7 @@ public sealed class EyeGazeController : MonoBehaviour
     // Grabbing an eye on the sprite face exits focus, same as grabbing a UI eye.
     private void OnCharacterDragStarted()
     {
+        characterEyeDragActive = true;
         if (!focused) return;
         focused = false;
         lockedFocusTarget = null;
@@ -465,6 +467,8 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+        bool releasedEyeDrag = eyeDrag.WasReleasedThisFrame() &&
+            (draggedEye != DraggedEye.None || characterEyeDragActive);
         bool overLeftPanel = leftPanel != null && RectTransformUtility.RectangleContainsScreenPoint(leftPanel, pointer, null);
         Cursor.visible = !overLeftPanel;
         UpdateArm(pointer, overLeftPanel);
@@ -509,17 +513,27 @@ public sealed class EyeGazeController : MonoBehaviour
             rightAim = ReadEyeAim(rightEyeRect, pointer);
         }
 
-        if (!sequenceComplete && !overFace && focusClick.WasPressedThisFrame() && IsPointerOnFocusTarget(pointer))
+        if (releasedEyeDrag)
         {
-            Transform newlyFocusedTarget = CurrentFocusTarget;
-            if (newlyFocusedTarget != null)
+            characterEyeDragActive = false;
+            if (!sequenceComplete && !focused && focusTargetCurrentlyAligned &&
+                grownFocusTarget == CurrentFocusTarget)
             {
-                lockedFocusTarget = newlyFocusedTarget;
-                focused = true;
-                if (characterEyes != null) characterEyes.SetAims(Vector2.zero, Vector2.zero);
-                LogTargetInteraction(newlyFocusedTarget);
-                AdvanceFocusSequence();
+                Transform newlyFocusedTarget = CurrentFocusTarget;
+                if (newlyFocusedTarget != null)
+                {
+                    lockedFocusTarget = newlyFocusedTarget;
+                    focused = true;
+                    if (characterEyes != null) characterEyes.SetAims(Vector2.zero, Vector2.zero);
+                }
             }
+        }
+
+        if (!sequenceComplete && !overFace && focused && focusClick.WasPressedThisFrame() &&
+            lockedFocusTarget != null && IsPointerOnFocusTarget(pointer))
+        {
+            LogTargetInteraction(lockedFocusTarget);
+            AdvanceFocusSequence();
         }
 
         if (characterEyes == null)
@@ -533,21 +547,17 @@ public sealed class EyeGazeController : MonoBehaviour
         }
 
         Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
-        Vector3 wantedLeftCamera = focused && cameraFocusTarget != null
-            ? new Vector3(cameraFocusTarget.position.x, cameraFocusTarget.position.y, leftCameraStart.z)
-            : leftCameraStart;
-        Vector3 wantedRightCamera = focused && cameraFocusTarget != null
-            ? new Vector3(cameraFocusTarget.position.x, cameraFocusTarget.position.y, rightCameraStart.z)
-            : rightCameraStart;
+        Vector3 wantedLeftCamera = leftCameraStart;
+        Vector3 wantedRightCamera = rightCameraStart;
 
-        Quaternion wantedLeftRotation = focused
-            ? leftCameraStartRotation
+        Quaternion wantedLeftRotation = focused && cameraFocusTarget != null
+            ? Quaternion.LookRotation(cameraFocusTarget.position - leftCameraStart, Vector3.up)
             : leftCameraStartRotation * Quaternion.Euler(
                 -leftAim.y * cameraAimRotationDegrees,
                 leftAim.x * cameraAimRotationDegrees,
                 0f);
-        Quaternion wantedRightRotation = focused
-            ? rightCameraStartRotation
+        Quaternion wantedRightRotation = focused && cameraFocusTarget != null
+            ? Quaternion.LookRotation(cameraFocusTarget.position - rightCameraStart, Vector3.up)
             : rightCameraStartRotation * Quaternion.Euler(
                 -rightAim.y * cameraAimRotationDegrees,
                 rightAim.x * cameraAimRotationDegrees,
@@ -565,9 +575,8 @@ public sealed class EyeGazeController : MonoBehaviour
 
         if (rightEyeView != null)
         {
-            Color tint = focused ? Color.white : rightImageColor;
-            tint.a = Mathf.Lerp(rightEyeView.color.a, focused ? FocusAlpha : DoubleVisionAlpha,
-                Time.deltaTime * followSpeed);
+            Color tint = rightImageColor;
+            tint.a = Mathf.Lerp(rightEyeView.color.a, DoubleVisionAlpha, Time.deltaTime * followSpeed);
             rightEyeView.color = tint;
         }
     }
@@ -696,6 +705,13 @@ public sealed class EyeGazeController : MonoBehaviour
         bool leftOnTarget = false;
         bool rightOnTarget = false;
         Transform target = CurrentFocusTarget;
+        if ((snappingTarget != null && snappingTarget != target) ||
+            (grownFocusTarget != null && grownFocusTarget != target))
+        {
+            ResetAlignmentSnap();
+            focusTargetCurrentlyAligned = false;
+        }
+
         bool targetAligned = target != null &&
             IsEyeTargetAligned(target) &&
             IsTargetCenterVisible(leftCamera, target) &&
@@ -703,6 +719,8 @@ public sealed class EyeGazeController : MonoBehaviour
 
         if (targetAligned && !focusTargetCurrentlyAligned)
             PlayAlignmentSnap(target);
+        else if (!targetAligned && focusTargetCurrentlyAligned)
+            ResetAlignmentSnap();
         focusTargetCurrentlyAligned = targetAligned;
 
         if (target != null && RectTransformUtility.ScreenPointToLocalPointInRectangle(
@@ -745,16 +763,20 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void PlayAlignmentSnap(Transform target)
     {
-        if (alignmentSnapRoutine != null)
-        {
-            StopCoroutine(alignmentSnapRoutine);
-            if (snappingTarget != null)
-                snappingTarget.localScale = snappingTargetOriginalScale;
-        }
+        ResetAlignmentSnap();
 
         snappingTarget = target;
         snappingTargetOriginalScale = target.localScale;
         alignmentSnapRoutine = StartCoroutine(AlignmentSnapAnimation(target, snappingTargetOriginalScale));
+    }
+
+    private void ResetAlignmentSnap()
+    {
+        if (alignmentSnapRoutine != null) StopCoroutine(alignmentSnapRoutine);
+        if (snappingTarget != null) snappingTarget.localScale = snappingTargetOriginalScale;
+        alignmentSnapRoutine = null;
+        snappingTarget = null;
+        grownFocusTarget = null;
     }
 
     private IEnumerator AlignmentSnapAnimation(Transform target, Vector3 originalScale)
@@ -769,6 +791,10 @@ public sealed class EyeGazeController : MonoBehaviour
             target.localScale = Vector3.Lerp(originalScale, popScale, elapsed / popDuration);
             yield return null;
         }
+
+        if (target == null) yield break;
+        target.localScale = popScale;
+        grownFocusTarget = target;
 
         for (float elapsed = 0f; elapsed < settleDuration; elapsed += Time.deltaTime)
         {
@@ -831,7 +857,13 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         Transform target = focused && lockedFocusTarget != null ? lockedFocusTarget : CurrentFocusTarget;
         float blurAmount = 0f;
-        if (target != null)
+        if (target != null && focused)
+        {
+            // Keep the surrounding scene blurred after a click-lock; only the target
+            // region is protected by the lens shader's local focus mask.
+            blurAmount = maximumMisalignmentBlur;
+        }
+        else if (target != null)
         {
             Vector3 leftView = leftCamera.WorldToViewportPoint(target.position);
             Vector3 rightView = rightCamera.WorldToViewportPoint(target.position);
