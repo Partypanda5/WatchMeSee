@@ -68,10 +68,20 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private SpriteRenderer hand;
     [SerializeField] private Sprite pointingHand;
     [SerializeField] private Sprite pressingHand;
+    [SerializeField] private AudioClip faceTapSound;
+    [SerializeField] private AudioClip eyeDragSquishSound;
 
     private InputAction pointerPosition;
     private InputAction eyeDrag;
     private Eye dragged;
+    private AudioSource faceTapAudioSource;
+    private AudioSource eyeDragAudioSource;
+    private Vector2 lastDragScreenPosition;
+    private float accumulatedDragScreenMovement;
+    private float lastEyeMovementTime;
+    private float dragSquishBasePitch = 1f;
+    private float dragSquishPitchPhase;
+    private bool faceTapPending;
     private Vector2 dragStartPointer;
     private Vector2 dragStartPupil;
     private Vector3 leftBrowRest;
@@ -93,7 +103,6 @@ public sealed class CharacterEyes : MonoBehaviour
     public Vector2 LeftAimTarget => Aim(leftEye, leftEye.pupilTarget);
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
     public Sprite PointingHandSprite => pointingHand;
-    public SpriteRenderer HandRenderer => hand;
 
     // Sends both pupils towards a -1..1 aim. The pupils ease there like a drag would.
     public void SetAims(Vector2 left, Vector2 right)
@@ -141,6 +150,12 @@ public sealed class CharacterEyes : MonoBehaviour
     private void OnDisable()
     {
         dragged = null;
+        if (eyeDragAudioSource != null)
+        {
+            eyeDragAudioSource.Stop();
+            eyeDragAudioSource.loop = false;
+            eyeDragAudioSource.pitch = 1f;
+        }
     }
 
     private void Init(Eye eye)
@@ -201,6 +216,7 @@ public sealed class CharacterEyes : MonoBehaviour
         if (pointerPosition != null && eyeDrag != null)
             HandleInput();
 
+        UpdateDragSquishAudio();
         UpdateEye(leftEye);
         UpdateEye(rightEye);
         UpdateFaceFeatures();
@@ -234,6 +250,7 @@ public sealed class CharacterEyes : MonoBehaviour
         if (eyeDrag.WasPressedThisFrame())
         {
             dragged = null;
+            faceTapPending = false;
             if (IsOverEye(leftEye, world)) dragged = leftEye;
             else if (IsOverEye(rightEye, world)) dragged = rightEye;
 
@@ -242,43 +259,127 @@ public sealed class CharacterEyes : MonoBehaviour
                 DragStarted?.Invoke();
                 dragStartPointer = ToEye(dragged, world);
                 dragStartPupil = dragged.pupilTarget;
+                lastDragScreenPosition = screen;
+                accumulatedDragScreenMovement = 0f;
+            }
+            else if (cam.pixelRect.Contains(screen))
+            {
+                faceTapPending = true;
             }
         }
 
         if (!eyeDrag.IsPressed())
+        {
             dragged = null;
+            faceTapPending = false;
+        }
 
         if (dragged != null)
         {
+            Vector2 screenMovement = screen - lastDragScreenPosition;
+            lastDragScreenPosition = screen;
             Vector2 delta = ToEye(dragged, world) - dragStartPointer;
+            Vector2 previousPupilTarget = dragged.pupilTarget;
             dragged.pupilTarget = ClampPupil(dragged, dragStartPupil + delta * dragSensitivity);
+
+            bool pupilMoved = (dragged.pupilTarget - previousPupilTarget).sqrMagnitude > 0.000001f;
+            if (pupilMoved)
+            {
+                accumulatedDragScreenMovement += screenMovement.magnitude;
+                lastEyeMovementTime = Time.unscaledTime;
+                if (accumulatedDragScreenMovement >= 6f)
+                {
+                    StartDragSquishLoop();
+                    accumulatedDragScreenMovement = 0f;
+                }
+            }
         }
 
         UpdateHand(cam, screen, world);
     }
 
+    private void PlayFaceTap()
+    {
+        if (faceTapSound == null) return;
+        if (faceTapAudioSource == null)
+        {
+            faceTapAudioSource = GetComponent<AudioSource>();
+            if (faceTapAudioSource == null) faceTapAudioSource = gameObject.AddComponent<AudioSource>();
+            faceTapAudioSource.playOnAwake = false;
+            faceTapAudioSource.spatialBlend = 0f;
+        }
+
+        faceTapAudioSource.PlayOneShot(faceTapSound);
+    }
+
+    private void StartDragSquishLoop()
+    {
+        if (eyeDragSquishSound == null) return;
+
+        if (eyeDragAudioSource == null)
+        {
+            eyeDragAudioSource = gameObject.AddComponent<AudioSource>();
+            eyeDragAudioSource.playOnAwake = false;
+            eyeDragAudioSource.spatialBlend = 0f;
+        }
+
+        // Use one looping source so movement never stacks overlapping one-shot voices.
+        if (eyeDragAudioSource.isPlaying && eyeDragAudioSource.loop && eyeDragAudioSource.clip == eyeDragSquishSound)
+            return;
+
+        eyeDragAudioSource.Stop();
+        eyeDragAudioSource.clip = eyeDragSquishSound;
+        eyeDragAudioSource.loop = true;
+        dragSquishBasePitch = Random.Range(0.92f, 1.08f);
+        dragSquishPitchPhase = Random.Range(0f, Mathf.PI * 2f);
+        eyeDragAudioSource.pitch = dragSquishBasePitch;
+        eyeDragAudioSource.Play();
+    }
+
+    private void UpdateDragSquishAudio()
+    {
+        if (eyeDragAudioSource == null) return;
+
+        bool movingEye = eyeDrag != null && eyeDrag.IsPressed() && dragged != null &&
+                         Time.unscaledTime - lastEyeMovementTime <= 0.3f;
+        if (!movingEye)
+        {
+            if (eyeDragAudioSource.isPlaying) eyeDragAudioSource.Stop();
+            eyeDragAudioSource.loop = false;
+            eyeDragAudioSource.pitch = 1f;
+            return;
+        }
+
+        if (eyeDragAudioSource.isPlaying)
+        {
+            eyeDragAudioSource.pitch = dragSquishBasePitch +
+                Mathf.Sin(Time.unscaledTime * 10f + dragSquishPitchPhase) * 0.035f;
+        }
+    }
     private void UpdateHand(Camera cam, Vector2 screen, Vector3 world)
     {
         if (hand == null) return;
 
-        // Only show the hand while the pointer is over this face's view.
-        bool visible = cam.pixelRect.Contains(screen);
+        // During an eye drag, keep the fingertip on the selected pupil even if the pointer leaves the face panel.
+        bool draggingEye = eyeDrag.IsPressed() && dragged != null;
+        bool visible = draggingEye || cam.pixelRect.Contains(screen);
         hand.enabled = visible;
         if (!visible) return;
 
-        Vector3 tip = world;
-        if (dragged != null)
-        {
-            // Where the pointer would be for the pupil's actual (clamped) position, so the hand stops when the eye does.
-            Vector2 pupilMoved = dragged.pupilTarget - dragStartPupil;
-            tip = ToWorld(dragged, dragStartPointer + pupilMoved / dragSensitivity, world.z);
-        }
+        Vector3 tip = draggingEye
+            ? ToWorld(dragged, dragged.pupilCurrent, world.z)
+            : world;
         hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
         hand.transform.localScale = Vector3.one * 0.88f;
         hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
 
         Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
         if (wanted != null) hand.sprite = wanted;
+        if (faceTapPending && !draggingEye && pressingHand != null && wanted == pressingHand)
+        {
+            PlayFaceTap();
+            faceTapPending = false;
+        }
     }
 
     private bool IsOverEye(Eye eye, Vector3 world)

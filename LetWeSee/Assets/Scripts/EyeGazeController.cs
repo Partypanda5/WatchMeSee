@@ -39,7 +39,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 20f;
     [SerializeField, Range(0.1f, 45f)] private float maximumCameraSeparationForBlurDegrees = 20f;
     [SerializeField, Range(1f, 100f)] private float focusRayDistance = 40f;
-    [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.4f;
+    [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.6f;
     [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.03f;
     [SerializeField, Range(0.1f, 2f)] private float focusHitRadius = 0.9f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
@@ -79,12 +79,6 @@ public sealed class EyeGazeController : MonoBehaviour
     private readonly List<RawImage> fisheyeImages = new List<RawImage>();
     private readonly List<Material> originalFisheyeMaterials = new List<Material>();
     private readonly List<Material> runtimeFisheyeMaterials = new List<Material>();
-    private readonly List<Graphic> armBlurGraphics = new List<Graphic>();
-    private readonly List<Material> originalArmGraphicMaterials = new List<Material>();
-    private readonly List<Material> runtimeArmBlurMaterials = new List<Material>();
-    private SpriteRenderer armBlurSpriteRenderer;
-    private Material originalArmSpriteMaterial;
-    private Material runtimeArmSpriteMaterial;
     private Canvas grabCanvas;
     private Image grabHandImage;
     private Coroutine grabRoutine;
@@ -119,7 +113,6 @@ public sealed class EyeGazeController : MonoBehaviour
         if (rightPupil != null) rightPupilStart = rightPupil.anchoredPosition;
         if (rightEyeView != null) rightImageColor = rightEyeView.color;
         SetupFisheyeEffect();
-        SetupArmBlurEffect();
 
         leftAim = RandomStartingAim();
         rightAim = RandomStartingAim();
@@ -175,10 +168,7 @@ public sealed class EyeGazeController : MonoBehaviour
             EnsureBathroomEnvironment(placeholderSprite);
         }
         if (sequenceEnabled)
-        {
-            PlaceBathroomSequenceTargets();
             UpdateSequenceLabelVisibility();
-        }
         if (sequenceEnabled && focusTarget != null && focusTarget != deodorantTarget)
             focusTarget.gameObject.SetActive(false);
     }
@@ -300,15 +290,6 @@ public sealed class EyeGazeController : MonoBehaviour
             new Color(0.79f, 0.82f, 0.79f), 3);
     }
 
-    private void PlaceBathroomSequenceTargets()
-    {
-        if (deodorantTarget != null)
-            deodorantTarget.position = new Vector3(-1.25f, -0.455f, deodorantTarget.position.z);
-        if (mouthwashTarget != null)
-            mouthwashTarget.position = new Vector3(1.25f, -0.455f, mouthwashTarget.position.z);
-        if (mirrorTarget != null)
-            mirrorTarget.position = new Vector3(0f, 1.75f, mirrorTarget.position.z);
-    }
 
     private static Transform FindTarget(string targetName)
     {
@@ -437,65 +418,6 @@ public sealed class EyeGazeController : MonoBehaviour
                 Destroy(runtimeFisheyeMaterials[i]);
         }
 
-        for (int i = 0; i < armBlurGraphics.Count; i++)
-        {
-            if (armBlurGraphics[i] != null)
-                armBlurGraphics[i].material = originalArmGraphicMaterials[i];
-            if (runtimeArmBlurMaterials[i] != null)
-                Destroy(runtimeArmBlurMaterials[i]);
-        }
-
-        if (armBlurSpriteRenderer != null)
-            armBlurSpriteRenderer.sharedMaterial = originalArmSpriteMaterial;
-        if (runtimeArmSpriteMaterial != null)
-            Destroy(runtimeArmSpriteMaterial);
-    }
-
-    private void SetupArmBlurEffect()
-    {
-        Shader shader = Resources.Load<Shader>("RightEyeFisheye");
-        if (shader == null) return;
-
-        RegisterArmBlurGraphic(armVisual != null ? armVisual.GetComponent<Graphic>() : null, shader);
-        RegisterArmBlurGraphic(handVisual != null ? handVisual.GetComponent<Graphic>() : null, shader);
-
-        armBlurSpriteRenderer = characterEyes != null ? characterEyes.HandRenderer : null;
-        if (armBlurSpriteRenderer != null)
-        {
-            originalArmSpriteMaterial = armBlurSpriteRenderer.sharedMaterial;
-            runtimeArmSpriteMaterial = CreateFullBlurMaterial(shader);
-            armBlurSpriteRenderer.sharedMaterial = runtimeArmSpriteMaterial;
-        }
-    }
-
-    private void RegisterArmBlurGraphic(Graphic graphic, Shader shader)
-    {
-        if (graphic == null) return;
-        originalArmGraphicMaterials.Add(graphic.material);
-        Material material = CreateFullBlurMaterial(shader);
-        runtimeArmBlurMaterials.Add(material);
-        armBlurGraphics.Add(graphic);
-        graphic.material = material;
-    }
-
-    private Material CreateFullBlurMaterial(Shader shader)
-    {
-        Material material = new Material(shader);
-        material.SetFloat("_FisheyeStrength", 0f);
-        material.SetFloat("_BlurRadiusPixels", maximumBlurRadiusPixels);
-        material.SetVector("_FocusCenter", new Vector4(-10f, -10f, 0f, 0f));
-        material.SetFloat("_FocusRadius", 0f);
-        material.SetFloat("_FocusFeather", 0f);
-        return material;
-    }
-
-    private void UpdateArmBlur(float blurAmount)
-    {
-        for (int i = 0; i < runtimeArmBlurMaterials.Count; i++)
-            if (runtimeArmBlurMaterials[i] != null)
-                runtimeArmBlurMaterials[i].SetFloat("_BlurStrength", blurAmount);
-        if (runtimeArmSpriteMaterial != null)
-            runtimeArmSpriteMaterial.SetFloat("_BlurStrength", blurAmount);
     }
 
     private void SetupFisheyeEffect()
@@ -770,8 +692,6 @@ public sealed class EyeGazeController : MonoBehaviour
         grabHandImage.sprite = pointingHandSprite;
         grabHandImage.preserveAspect = true;
         grabHandImage.raycastTarget = false;
-        Shader armBlurShader = Resources.Load<Shader>("RightEyeFisheye");
-        if (armBlurShader != null) RegisterArmBlurGraphic(grabHandImage, armBlurShader);
 
         RectTransform handRect = grabHandImage.rectTransform;
         handRect.anchorMin = new Vector2(0.5f, 0.5f);
@@ -1163,7 +1083,6 @@ public sealed class EyeGazeController : MonoBehaviour
             SetFocusBlurForCamera(runtimeFisheyeMaterials[i], eyeCamera, rayHit, target, bothRaysHitTarget, blurAmount);
         }
 
-        UpdateArmBlur(blurAmount);
     }
 
     private void SetFocusBlurForCamera(Material material, Camera eyeCamera, CenterRayHit rayHit,
