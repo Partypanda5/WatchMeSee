@@ -33,6 +33,13 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform mouthwashTarget;
     [SerializeField] private Transform toothbrushTarget;
     [SerializeField] private Transform mirrorTarget;
+    [Header("Cafe chair interaction")]
+    [SerializeField] private Transform chairManTarget;
+    [SerializeField] private Transform chairFocusTarget;
+    [SerializeField] private Renderer chairManRenderer;
+    [SerializeField] private Sprite chairManDisgustedSprite;
+    [SerializeField] private AudioClip chairManWhisperSound;
+    [SerializeField] private AudioClip chairManDisgustSound;
     [SerializeField] private RawImage rightEyeView;
     [SerializeField] private AudioClip grabSound;
     [Header("Intro dialogue")]
@@ -111,6 +118,10 @@ public sealed class EyeGazeController : MonoBehaviour
     private Image grabHandImage;
     private AudioSource grabAudioSource;
     private Coroutine grabRoutine;
+    private Coroutine chairManReactionRoutine;
+    private SpriteRenderer chairManSpriteRenderer;
+    private Sprite chairManOriginalSprite;
+    private MaterialPropertyBlock chairManOriginalPropertyBlock;
     private Renderer[] focusRayRenderers = new Renderer[0];
     private Image leftEyeImage;
     private Image rightEyeImage;
@@ -227,11 +238,34 @@ public sealed class EyeGazeController : MonoBehaviour
         if (mirrorTarget == null && GameObject.Find("MirrorTarget") != null)
             mirrorTarget = GameObject.Find("MirrorTarget").transform;
 
-        if (SceneManager.GetActiveScene().name == "Cafe" && focusTarget == null)
+        if (SceneManager.GetActiveScene().name == "Cafe")
         {
-            GameObject coffeeObject = GameObject.Find("YOUR COFFEE");
-            if (coffeeObject == null) coffeeObject = GameObject.Find("Coffee");
-            if (coffeeObject != null) focusTarget = coffeeObject.transform;
+            if (focusTarget == null)
+            {
+                GameObject coffeeObject = GameObject.Find("YOUR COFFEE");
+                if (coffeeObject == null) coffeeObject = GameObject.Find("Coffee");
+                if (coffeeObject != null) focusTarget = coffeeObject.transform;
+            }
+
+            if (chairManTarget == null)
+            {
+                GameObject seatedMan = GameObject.Find("npc1");
+                if (seatedMan != null) chairManTarget = seatedMan.transform;
+            }
+            if (chairFocusTarget == null && chairManTarget != null)
+                chairFocusTarget = FindClosestChair(chairManTarget);
+            RegisterFocusTarget(chairManTarget);
+            RegisterFocusTarget(chairFocusTarget);
+            if (chairManRenderer == null && chairManTarget != null)
+                chairManRenderer = chairManTarget.GetComponentInChildren<Renderer>();
+            chairManSpriteRenderer = chairManRenderer as SpriteRenderer;
+            if (chairManSpriteRenderer != null)
+                chairManOriginalSprite = chairManSpriteRenderer.sprite;
+            else if (chairManRenderer != null)
+            {
+                chairManOriginalPropertyBlock = new MaterialPropertyBlock();
+                chairManRenderer.GetPropertyBlock(chairManOriginalPropertyBlock);
+            }
         }
 
         EnsureSequenceTargets();
@@ -263,6 +297,36 @@ public sealed class EyeGazeController : MonoBehaviour
         }
         if (sequenceEnabled && focusTarget != null && focusTarget != deodorantTarget)
             focusTarget.gameObject.SetActive(false);
+    }
+
+    private void RegisterFocusTarget(Transform target)
+    {
+        if (target == null || (focusTargets != null && System.Array.Exists(focusTargets, entry => entry == target)))
+            return;
+
+        int count = focusTargets != null ? focusTargets.Length : 0;
+        System.Array.Resize(ref focusTargets, count + 1);
+        focusTargets[count] = target;
+    }
+
+    private static Transform FindClosestChair(Transform reference)
+    {
+        Transform closest = null;
+        float closestDistance = float.PositiveInfinity;
+        foreach (Transform candidate in FindObjectsByType<Transform>(FindObjectsSortMode.None))
+        {
+            if (candidate.gameObject.scene != SceneManager.GetActiveScene() ||
+                !(candidate.name == "Chair" || candidate.name.StartsWith("Chair (")))
+                continue;
+
+            float distance = (candidate.position - reference.position).sqrMagnitude;
+            if (distance < closestDistance)
+            {
+                closestDistance = distance;
+                closest = candidate;
+            }
+        }
+        return closest;
     }
 
     private static Transform FindTarget(string targetName)
@@ -877,6 +941,11 @@ public sealed class EyeGazeController : MonoBehaviour
             UpdateIntroDialogue();
             return;
         }
+        if (chairManReactionRoutine != null)
+        {
+            Cursor.visible = true;
+            return;
+        }
 
         bool uiEyesReady = leftEyeRect != null && rightEyeRect != null && leftPupil != null && rightPupil != null;
         if (pointerPosition == null || eyeDrag == null || focusClick == null ||
@@ -965,11 +1034,18 @@ public sealed class EyeGazeController : MonoBehaviour
         }
 
         if (!sequenceComplete && !overFace && focused && focusClick.WasPressedThisFrame() &&
-            IsPickupTarget(lockedFocusTarget) && grabRoutine == null &&
-            IsPointerOnFocusTarget(pointer, lockedFocusTarget))
+            grabRoutine == null && IsPointerOnFocusTarget(pointer, lockedFocusTarget))
         {
-            LogTargetInteraction(lockedFocusTarget);
-            grabRoutine = StartCoroutine(GrabTargetRoutine(lockedFocusTarget));
+            if ((lockedFocusTarget == chairManTarget || lockedFocusTarget == chairFocusTarget) && chairManReactionRoutine == null)
+            {
+                Debug.Log("you interacted with the man in the chair");
+                chairManReactionRoutine = StartCoroutine(ChairManReactionRoutine());
+            }
+            else if (IsPickupTarget(lockedFocusTarget))
+            {
+                LogTargetInteraction(lockedFocusTarget);
+                grabRoutine = StartCoroutine(GrabTargetRoutine(lockedFocusTarget));
+            }
         }
 
         if (characterEyes == null)
@@ -1298,6 +1374,57 @@ public sealed class EyeGazeController : MonoBehaviour
 
         CompleteGrabInteraction(target);
         grabRoutine = null;
+    }
+
+    private IEnumerator ChairManReactionRoutine()
+    {
+        if (chairManWhisperSound != null && grabAudioSource != null)
+        {
+            grabAudioSource.PlayOneShot(chairManWhisperSound);
+            yield return new WaitForSecondsRealtime(chairManWhisperSound.length);
+        }
+
+        SetChairManExpression(chairManDisgustedSprite);
+        if (chairManDisgustSound != null && grabAudioSource != null)
+        {
+            grabAudioSource.PlayOneShot(chairManDisgustSound);
+            yield return new WaitForSecondsRealtime(chairManDisgustSound.length);
+        }
+
+        RestoreChairManExpression();
+        ResetAlignmentSnap();
+        focusTargetCurrentlyAligned = false;
+        focused = false;
+        lockedFocusTarget = null;
+        alignedFocusTarget = null;
+        grownFocusTarget = null;
+        chairManReactionRoutine = null;
+    }
+
+    private void SetChairManExpression(Sprite expression)
+    {
+        if (expression == null || chairManRenderer == null) return;
+        if (chairManSpriteRenderer != null)
+        {
+            chairManSpriteRenderer.sprite = expression;
+            return;
+        }
+
+        MaterialPropertyBlock block = new MaterialPropertyBlock();
+        chairManRenderer.GetPropertyBlock(block);
+        block.SetTexture("_MainTex", expression.texture);
+        if (chairManRenderer.sharedMaterial != null && chairManRenderer.sharedMaterial.HasProperty("_BaseMap"))
+            block.SetTexture("_BaseMap", expression.texture);
+        chairManRenderer.SetPropertyBlock(block);
+    }
+
+    private void RestoreChairManExpression()
+    {
+        if (chairManRenderer == null) return;
+        if (chairManSpriteRenderer != null)
+            chairManSpriteRenderer.sprite = chairManOriginalSprite;
+        else
+            chairManRenderer.SetPropertyBlock(chairManOriginalPropertyBlock);
     }
 
     private void PlayGrabSound()

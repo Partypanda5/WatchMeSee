@@ -10700,11 +10700,19 @@ MonoBehaviour:
   leftCamera: {fileID: 519420031}
   rightCamera: {fileID: 1337670169}
   focusTarget: {fileID: 208639089}
-  focusTargets: []
+  focusTargets:
+  - {fileID: 1741103399}
+  - {fileID: 1416492475}
   deodorantTarget: {fileID: 0}
   mouthwashTarget: {fileID: 0}
   toothbrushTarget: {fileID: 0}
   mirrorTarget: {fileID: 0}
+  chairManTarget: {fileID: 1741103399}
+  chairFocusTarget: {fileID: 1416492475}
+  chairManRenderer: {fileID: 1741103397}
+  chairManDisgustedSprite: {fileID: 0}
+  chairManWhisperSound: {fileID: 0}
+  chairManDisgustSound: {fileID: 0}
   rightEyeView: {fileID: 2026589519}
   grabSound: {fileID: 8300000, guid: 5a735a5ce0826164cb5e463045238610, type: 3}
   dialogueBoxSprite: {fileID: 21300000, guid: 8fa0c69f6b808c94b94d6d1f6d9cab66, type: 3}
