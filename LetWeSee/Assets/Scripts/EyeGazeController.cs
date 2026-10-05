@@ -20,6 +20,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private RectTransform handVisual;
     [Tooltip("Optional sprite face. When set, it drives the eye aim instead of the UI eyes above.")]
     [SerializeField] private CharacterEyes characterEyes;
+    [Tooltip("Optional: shows a camera feed of the real face in the mirror. When set, no copy of the face is built in the mirror.")]
+    [SerializeField] private Renderer mirrorReflectionView;
     [SerializeField] private Camera faceCamera;
 
     [Header("World panel")]
@@ -29,6 +31,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform focusTarget;
     [Tooltip("Extra objects the eyes can lock onto outside the bathroom sequence.")]
     [SerializeField] private Transform[] focusTargets = new Transform[0];
+    [Tooltip("How big an item swells when the eyes line up on it (1 = no swell).")]
+    [SerializeField, Range(1f, 1.5f)] private float focusPopScale = 1.035f;
     [SerializeField] private Transform deodorantTarget;
     [SerializeField] private Transform mouthwashTarget;
     [SerializeField] private Transform toothbrushTarget;
@@ -444,6 +448,13 @@ public sealed class EyeGazeController : MonoBehaviour
         if (mirrorSurfaceRenderer != null)
             mirrorSurfaceRenderer.sortingOrder = -1;
 
+        // The mirror shows a live camera image of the real face instead, so nothing needs copying.
+        if (mirrorReflectionView != null)
+        {
+            mirrorFrameRenderer.sortingOrder = Mathf.Max(mirrorFrameRenderer.sortingOrder, 110);
+            return;
+        }
+
         GameObject mirrorFace = Instantiate(characterEyes.gameObject, mirrorTarget, false);
         mirrorFace.name = "MirrorCharacterFace";
         mirrorCharacterEyes = mirrorFace.GetComponent<CharacterEyes>();
@@ -602,6 +613,9 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void LateUpdate()
     {
+        // The player's mouth moves while one of their own dialogue lines is typing out.
+        if (characterEyes != null)
+            characterEyes.SetTalking(introDialogueActive && !dialogueOnDateSide && dialogueTextAnimation != null);
         UpdateMirrorCharacter();
         PositionIntroDialogueAtMouth();
     }
@@ -1465,7 +1479,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (handImage == null)
         {
             PlayGrabSound();
-            target.gameObject.SetActive(false);
+            HideGrabbedTarget(target);
             CompleteGrabInteraction(target);
             grabRoutine = null;
             yield break;
@@ -1488,7 +1502,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (target != null)
         {
             PlayGrabSound();
-            target.gameObject.SetActive(false);
+            HideGrabbedTarget(target);
         }
 
         yield return new WaitForSeconds(0.12f);
@@ -1600,6 +1614,23 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         if (grabSound != null && grabAudioSource != null)
             grabAudioSource.PlayOneShot(grabSound);
+    }
+
+    // Picking an item up hides it. The toothbrush comes out of its mug, so only the brush goes and the mug stays
+    // (it can't be used again because the target now counts as collected).
+    private void HideGrabbedTarget(Transform target)
+    {
+        if (target == null) return;
+        if (target == toothbrushTarget)
+        {
+            foreach (Transform child in target)
+            {
+                if (child.name.IndexOf("mug", System.StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                child.gameObject.SetActive(false);
+            }
+            return;
+        }
+        target.gameObject.SetActive(false);
     }
 
     private void CompleteGrabInteraction(Transform target)
@@ -2045,7 +2076,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private IEnumerator AlignmentSnapAnimation(Transform target, Vector3 originalScale)
     {
-        Vector3 popScale = originalScale * 1.35f;
+        Vector3 popScale = originalScale * focusPopScale;
         const float popDuration = 0.18f;
         const float settleDuration = 0.36f;
 
