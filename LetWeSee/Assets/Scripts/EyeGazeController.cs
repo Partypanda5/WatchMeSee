@@ -36,6 +36,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [Header("Intro dialogue")]
     [SerializeField] private Sprite dialogueBoxSprite;
     [SerializeField] private Font dialogueFont;
+    [SerializeField] private Transform dateDialogueTarget;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceHeightRatio = 0.88f;
 
@@ -55,7 +56,6 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0.1f, 45f)] private float maximumCameraSeparationForBlurDegrees = 20f;
     [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.4f;
     [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.1f;
-    [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
     [SerializeField, Range(1f, 20f)] private float followSpeed = 10f;
     [SerializeField, Range(0.1f, 2f)] private float normalEyeAimSensitivity = 1f;
     [SerializeField, Range(0.01f, 1f)] private float draggingEyeAimSensitivity = 0.01f;
@@ -122,6 +122,9 @@ public sealed class EyeGazeController : MonoBehaviour
     private RectTransform introDialoguePanel;
     private Text introDialogueText;
     private string[] activeDialogueLines;
+    private bool cafeDialogueSequence;
+    private int cafeDialoguePhase;
+    private bool dialogueOnDateSide;
     private Coroutine dialogueTextAnimation;
     private static readonly string[] IntroDialogueLines =
     {
@@ -134,12 +137,32 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void Start()
     {
+        if (SceneManager.GetActiveScene().name == "Cafe")
+        {
+            if (dateDialogueTarget == null)
+            {
+                GameObject dateObject = GameObject.Find("Date");
+                if (dateObject != null) dateDialogueTarget = dateObject.transform;
+            }
+
+            cafeDialogueSequence = true;
+            cafeDialoguePhase = 1;
+            BeginDialogue(new[]
+            {
+                "wow this restaurant is so pretty",
+                "you took a while to get here, is everything okay?"
+            }, true);
+            return;
+        }
+
         BeginDialogue(IntroDialogueLines);
     }
 
-    private void BeginDialogue(string[] lines)
+    private void BeginDialogue(string[] lines, bool onDateSide = false)
     {
-        if (lines == null || lines.Length == 0 || leftPanel == null || focusClick == null) return;
+        if (lines == null || lines.Length == 0 || focusClick == null) return;
+        dialogueOnDateSide = onDateSide;
+        if ((dialogueOnDateSide && worldPanel == null) || (!dialogueOnDateSide && leftPanel == null)) return;
 
         activeDialogueLines = lines;
         introDialogueIndex = 0;
@@ -158,6 +181,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (characterEyes != null) characterEyes.SetIntroDialogueLocked(true);
         Cursor.visible = true;
     }
+
     private void Awake()
     {
         CleanPlaceholderVisuals();
@@ -200,6 +224,13 @@ public sealed class EyeGazeController : MonoBehaviour
             toothbrushTarget = GameObject.Find("ToothbrushTarget").transform;
         if (mirrorTarget == null && GameObject.Find("MirrorTarget") != null)
             mirrorTarget = GameObject.Find("MirrorTarget").transform;
+
+        if (SceneManager.GetActiveScene().name == "Cafe" && focusTarget == null)
+        {
+            GameObject coffeeObject = GameObject.Find("YOUR COFFEE");
+            if (coffeeObject == null) coffeeObject = GameObject.Find("Coffee");
+            if (coffeeObject != null) focusTarget = coffeeObject.transform;
+        }
 
         EnsureSequenceTargets();
         CreateMirrorCharacter();
@@ -542,9 +573,13 @@ public sealed class EyeGazeController : MonoBehaviour
     }
     private void PositionIntroDialogueAtMouth()
     {
-        if (!introDialogueActive || introDialoguePanel == null || leftPanel == null ||
-            characterEyes == null || faceCamera == null)
+        if (!introDialogueActive || introDialoguePanel == null) return;
+        if (dialogueOnDateSide)
+        {
+            PositionDateDialogueUnderCharacter();
             return;
+        }
+        if (leftPanel == null || characterEyes == null || faceCamera == null) return;
 
         Vector3 mouthScreen = faceCamera.WorldToScreenPoint(characterEyes.MouthWorldPosition);
         if (mouthScreen.z < 0f) return;
@@ -557,7 +592,6 @@ public sealed class EyeGazeController : MonoBehaviour
                 leftPanel, mouthScreen, uiCamera, out Vector2 mouthLocal))
             return;
 
-        // The speech tip sits near 62% across and 92% up the source sprite.
         Vector2 tailOffset = new Vector2(
             (0.62f - introDialoguePanel.pivot.x) * introDialoguePanel.rect.width * introDialoguePanel.localScale.x,
             0.92f * introDialoguePanel.rect.height * introDialoguePanel.localScale.y);
@@ -566,13 +600,44 @@ public sealed class EyeGazeController : MonoBehaviour
             Mathf.Lerp(leftPanel.rect.yMin, leftPanel.rect.yMax, 0.095f));
         introDialoguePanel.anchoredPosition = mouthLocal - anchorReference - tailOffset;
     }
+
+    private void PositionDateDialogueUnderCharacter()
+    {
+        if (dateDialogueTarget == null || rightCamera == null || worldPanel == null) return;
+
+        // The mouth sits just above the vertical center of the Date portrait texture.
+        // Anchor the speech bubble tip there so the box hangs below it, toward the bottom of the panel.
+        const float mouthHeightFromPortraitBottom = 0.54f;
+        Vector3 dateAnchor = dateDialogueTarget.TransformPoint(
+            new Vector3(0f, mouthHeightFromPortraitBottom - 0.5f, 0f));
+
+        Vector3 viewport = rightCamera.WorldToViewportPoint(dateAnchor);
+        if (viewport.z < 0f) return;
+
+        Rect panelRect = worldPanel.rect;
+        Vector2 dateLocal = new Vector2(
+            Mathf.Lerp(panelRect.xMin, panelRect.xMax, Mathf.Clamp01(viewport.x)),
+            Mathf.Lerp(panelRect.yMin, panelRect.yMax, Mathf.Clamp01(viewport.y)));
+        Vector2 tailOffset = new Vector2(
+            (0.62f - introDialoguePanel.pivot.x) * introDialoguePanel.rect.width * introDialoguePanel.localScale.x,
+            0.92f * introDialoguePanel.rect.height * introDialoguePanel.localScale.y);
+        Vector2 anchorReference = new Vector2(
+            Mathf.Lerp(panelRect.xMin, panelRect.xMax, 0.5f), panelRect.yMin);
+        introDialoguePanel.anchoredPosition = dateLocal - anchorReference - tailOffset;
+    }
+
     private void CreateIntroDialogueBox()
     {
-        GameObject panelObject = new GameObject("Bathroom Intro Dialogue", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform dialogueParent = dialogueOnDateSide ? worldPanel : leftPanel;
+        if (dialogueParent == null) return;
+
+        string dialogueObjectName = dialogueOnDateSide ? "Date Dialogue" : "Bathroom Intro Dialogue";
+        GameObject panelObject = new GameObject(dialogueObjectName, typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         introDialoguePanel = panelObject.GetComponent<RectTransform>();
-        introDialoguePanel.SetParent(leftPanel, false);
-        introDialoguePanel.anchorMin = new Vector2(0.15f, 0.095f);
-        introDialoguePanel.anchorMax = new Vector2(0.85f, 0.095f);
+        introDialoguePanel.SetParent(dialogueParent, false);
+        float dialogueAnchorY = dialogueOnDateSide ? 0f : 0.095f;
+        introDialoguePanel.anchorMin = new Vector2(0.15f, dialogueAnchorY);
+        introDialoguePanel.anchorMax = new Vector2(0.85f, dialogueAnchorY);
         introDialoguePanel.pivot = new Vector2(0.5f, 0f);
         introDialoguePanel.anchoredPosition = Vector2.zero;
         introDialoguePanel.offsetMin = Vector2.zero;
@@ -591,7 +656,6 @@ public sealed class EyeGazeController : MonoBehaviour
         GameObject textObject = new GameObject("Dialogue Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
         RectTransform textRect = textObject.GetComponent<RectTransform>();
         textRect.SetParent(introDialoguePanel, false);
-        // The sprite’s speech tail occupies its upper area; center the words in the main bubble body.
         textRect.anchorMin = new Vector2(0.04f, 0.05f);
         textRect.anchorMax = new Vector2(0.96f, 0.53f);
         textRect.offsetMin = new Vector2(8f, 4f);
@@ -612,12 +676,11 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialogueText.raycastTarget = false;
         SetIntroDialogueLine(activeDialogueLines[0]);
     }
-
     private void SetIntroDialogueLine(string line)
     {
         StopIntroDialogueAnimation();
         if (characterEyes != null)
-            characterEyes.PlayDialogueGroans();
+            characterEyes.PlayDialogueVoice(dialogueOnDateSide);
 
         dialogueTextAnimation = StartCoroutine(AnimateIntroDialogueLine(line));
     }
@@ -708,7 +771,6 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialoguePanel.localScale = Vector3.Lerp(
             introDialoguePanel.localScale, Vector3.one * targetScale, scaleBlend);
 
-        // A line accepts one advance click after its word animation has finished.
         if (dialogueTextAnimation != null || !focusClick.WasPressedThisFrame() || !hovering)
             return;
 
@@ -716,6 +778,12 @@ public sealed class EyeGazeController : MonoBehaviour
         if (activeDialogueLines != null && introDialogueIndex < activeDialogueLines.Length)
         {
             SetIntroDialogueLine(activeDialogueLines[introDialogueIndex]);
+            return;
+        }
+
+        if (cafeDialogueSequence)
+        {
+            AdvanceCafeDialogueSequence();
             return;
         }
 
@@ -732,6 +800,32 @@ public sealed class EyeGazeController : MonoBehaviour
         }
         if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
     }
+
+    private void AdvanceCafeDialogueSequence()
+    {
+        StopIntroDialogueAnimation();
+        if (introDialoguePanel != null) Destroy(introDialoguePanel.gameObject);
+        introDialoguePanel = null;
+        introDialogueText = null;
+        introDialogueActive = false;
+
+        if (cafeDialoguePhase == 1)
+        {
+            cafeDialoguePhase = 2;
+            BeginDialogue(new[] { "yeah my eyes are a bit sore" });
+            return;
+        }
+
+        if (cafeDialoguePhase == 2)
+        {
+            cafeDialoguePhase = 3;
+            BeginDialogue(new[] { "shame babe, well let's order something" }, true);
+            return;
+        }
+
+        cafeDialogueSequence = false;
+        if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
+    }
     private IEnumerator FadeToCafe()
     {
         sceneTransitioning = true;
@@ -739,7 +833,7 @@ public sealed class EyeGazeController : MonoBehaviour
         Cursor.lockState = CursorLockMode.None;
 
         Canvas fadeCanvas = leftPanel != null ? leftPanel.GetComponentInParent<Canvas>() : null;
-        if (fadeCanvas == null) fadeCanvas = FindObjectOfType<Canvas>();
+        if (fadeCanvas == null) fadeCanvas = FindAnyObjectByType<Canvas>();
         if (fadeCanvas == null)
         {
             Debug.LogError("Could not find a Canvas for the scene transition fade.");
@@ -790,7 +884,8 @@ public sealed class EyeGazeController : MonoBehaviour
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
         bool mouthwashActive = characterEyes != null && characterEyes.IsUsingMouthwash;
         bool toothbrushActive = characterEyes != null && characterEyes.IsUsingToothbrush;
-        bool faceUseActive = mouthwashActive || toothbrushActive;
+        bool coffeeActive = characterEyes != null && characterEyes.IsUsingCoffee;
+        bool faceUseActive = mouthwashActive || toothbrushActive || coffeeActive;
         if (grabRoutine != null || (characterEyes != null && (characterEyes.IsUsingDeodorant || faceUseActive)))
         {
             Cursor.visible = false;
@@ -957,7 +1052,7 @@ public sealed class EyeGazeController : MonoBehaviour
     // Where an eye ray first meets anything the eye camera can see (sprites and meshes), or the far clip distance.
     private Vector3 FindGazePoint(Ray ray, Camera eyeCamera)
     {
-        if (gazeRenderers == null) gazeRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        if (gazeRenderers == null) gazeRenderers = FindObjectsByType<Renderer>();
         float nearestDistance = eyeCamera.farClipPlane;
         foreach (Renderer candidate in gazeRenderers)
         {
@@ -1179,6 +1274,9 @@ public sealed class EyeGazeController : MonoBehaviour
             characterEyes.BeginMouthwashUse();
         else if (target == toothbrushTarget && characterEyes != null)
             characterEyes.BeginToothbrushUse();
+        else if (!sequenceEnabled && target == focusTarget &&
+            SceneManager.GetActiveScene().name == "Cafe" && characterEyes != null)
+            characterEyes.BeginCoffeeUse();
     }
 
     private Image CreateGrabHand()
@@ -1258,9 +1356,9 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private bool IsPickupTarget(Transform target)
     {
-        return sequenceEnabled && target != null &&
-            (target == deodorantTarget || target == mouthwashTarget || target == toothbrushTarget) &&
-            !collectedItems.Contains(target);
+        if (target == null || collectedItems.Contains(target)) return false;
+        if (!sequenceEnabled) return target == focusTarget;
+        return target == deodorantTarget || target == mouthwashTarget || target == toothbrushTarget;
     }
 
     private IEnumerator AnimateGrabHand(Vector2 from, Vector2 to, float duration, bool fadeOut)
@@ -1396,7 +1494,7 @@ public sealed class EyeGazeController : MonoBehaviour
         EnsureFocusTargetCollider(mouthwashTarget);
         EnsureFocusTargetCollider(toothbrushTarget);
         EnsureFocusTargetCollider(mirrorTarget);
-        focusRayRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
+        focusRayRenderers = FindObjectsByType<Renderer>();
         Physics.SyncTransforms();
     }
 

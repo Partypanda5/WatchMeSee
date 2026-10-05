@@ -85,6 +85,8 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private AudioClip toothBrushSound;
     [SerializeField] private AudioClip[] manMoanClips = new AudioClip[0];
     [SerializeField] private AudioClip dialogueGroansSound;
+    [SerializeField] private AudioClip womanTalkSound;
+    [SerializeField] private AudioClip sippingCoffeeSound;
     [SerializeField] private AudioClip faceTapSound;
     [SerializeField] private AudioClip eyeDragSquishSound;
 
@@ -95,6 +97,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private AudioSource eyeDragAudioSource;
     private AudioSource deodorantSprayAudioSource;
     private AudioSource mouthwashAudioSource;
+    private AudioSource coffeeSipAudioSource;
     private AudioSource toothbrushAudioSource;
     private AudioSource manMoanAudioSource;
     private AudioSource dialogueGroansAudioSource;
@@ -111,6 +114,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool deodorantUseActive;
     private bool mouthwashUseActive;
     private bool toothbrushUseActive;
+    private bool coffeeUseActive;
     private bool introDialogueLocked;
     private Coroutine introHandPopRoutine;
     private Sprite dialogueReturnHandSprite;
@@ -147,12 +151,13 @@ public sealed class CharacterEyes : MonoBehaviour
     public bool IsUsingDeodorant => deodorantUseActive;
     public bool IsUsingMouthwash => mouthwashUseActive;
     public bool IsUsingToothbrush => toothbrushUseActive;
+    public bool IsUsingCoffee => coffeeUseActive;
     public Vector3 MouthWorldPosition => mouthVisual != null ? mouthVisual.bounds.center : transform.position;
 
     // Called after the deodorant pickup animation completes. The player can spray by holding LMB.
     public void BeginDeodorantUse()
     {
-        if (mirrorCopyMode || hand == null || deodorantIdleHand == null || eyeDrag == null || deodorantUseActive || mouthwashUseActive || toothbrushUseActive)
+        if (mirrorCopyMode || hand == null || deodorantIdleHand == null || eyeDrag == null || deodorantUseActive || mouthwashUseActive || toothbrushUseActive || coffeeUseActive)
             return;
 
         deodorantUseActive = true;
@@ -172,7 +177,7 @@ public sealed class CharacterEyes : MonoBehaviour
     public void BeginMouthwashUse()
     {
         if (mirrorCopyMode || hand == null || mouthwashIdleHand == null || eyeDrag == null ||
-            deodorantUseActive || mouthwashUseActive || toothbrushUseActive)
+            deodorantUseActive || mouthwashUseActive || toothbrushUseActive || coffeeUseActive)
             return;
 
         mouthwashUseActive = true;
@@ -184,14 +189,33 @@ public sealed class CharacterEyes : MonoBehaviour
         originalHandScale = hand.transform.localScale;
         originalHandRotation = hand.transform.localRotation;
         originalHandEnabled = hand.enabled;
-        StartCoroutine(MouthwashUseSequence());
+        StartCoroutine(MouthwashUseSequence(false));
+    }
+
+    // Starts the same four-second mouth interaction using the mouthwash hand sprites for coffee.
+    public void BeginCoffeeUse()
+    {
+        if (mirrorCopyMode || hand == null || mouthwashIdleHand == null || eyeDrag == null ||
+            deodorantUseActive || mouthwashUseActive || toothbrushUseActive || coffeeUseActive)
+            return;
+
+        coffeeUseActive = true;
+        dragged = null;
+        faceTapPending = false;
+        if (eyeDragAudioSource != null) eyeDragAudioSource.Stop();
+        originalHandSprite = hand.sprite;
+        originalHandPosition = hand.transform.position;
+        originalHandScale = hand.transform.localScale;
+        originalHandRotation = hand.transform.localRotation;
+        originalHandEnabled = hand.enabled;
+        StartCoroutine(MouthwashUseSequence(true));
     }
 
     // Called after the toothbrush pickup animation completes.
     public void BeginToothbrushUse()
     {
         if (mirrorCopyMode || hand == null || toothbrushIdleHand == null || eyeDrag == null ||
-            deodorantUseActive || mouthwashUseActive || toothbrushUseActive)
+            deodorantUseActive || mouthwashUseActive || toothbrushUseActive || coffeeUseActive)
             return;
 
         toothbrushUseActive = true;
@@ -428,6 +452,7 @@ public sealed class CharacterEyes : MonoBehaviour
         SetDeodorantSprayAudio(false);
         StopManMoanAudio();
         SetMouthwashAudio(false);
+        SetCoffeeSipAudio(false);
         SetToothbrushAudio(false);
         if (eyeDragAudioSource != null)
         {
@@ -494,7 +519,7 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (mirrorCopyMode) return;
 
-        if (!introDialogueLocked && !deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && pointerPosition != null && eyeDrag != null)
+        if (!introDialogueLocked && !deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && !coffeeUseActive && pointerPosition != null && eyeDrag != null)
             HandleInput();
 
         UpdateDragSquishAudio();
@@ -761,9 +786,10 @@ public sealed class CharacterEyes : MonoBehaviour
         }
     }
 
-    public void PlayDialogueGroans()
+    public void PlayDialogueVoice(bool dateIsSpeaking)
     {
-        if (dialogueGroansSound == null) return;
+        AudioClip voiceClip = dateIsSpeaking ? womanTalkSound : dialogueGroansSound;
+        if (voiceClip == null) return;
         if (dialogueGroansAudioSource == null)
         {
             dialogueGroansAudioSource = gameObject.AddComponent<AudioSource>();
@@ -771,7 +797,7 @@ public sealed class CharacterEyes : MonoBehaviour
             dialogueGroansAudioSource.spatialBlend = 0f;
         }
 
-        dialogueGroansAudioSource.PlayOneShot(dialogueGroansSound);
+        dialogueGroansAudioSource.PlayOneShot(voiceClip);
     }
     private void UpdateManMoanAudio()
     {
@@ -822,7 +848,7 @@ public sealed class CharacterEyes : MonoBehaviour
         handPosition.z = hand.transform.position.z;
         hand.transform.position = handPosition;
     }
-    private IEnumerator MouthwashUseSequence()
+    private IEnumerator MouthwashUseSequence(bool coffeeSip)
     {
         hand.sprite = mouthwashIdleHand;
         MoveInteractionHandTipWithPointer(mouthwashBottleTipNormalized);
@@ -838,7 +864,8 @@ public sealed class CharacterEyes : MonoBehaviour
                 if (mouthVisual != null) mouthVisual.enabled = false;
                 hand.sprite = mouthwashHoldHand != null ? mouthwashHoldHand : mouthwashIdleHand;
                 MoveInteractionHandTipWithPointer(mouthwashBottleTipNormalized);
-                SetMouthwashAudio(true);
+                if (coffeeSip) SetCoffeeSipAudio(true);
+                else SetMouthwashAudio(true);
 
                 while (eyeDrag.IsPressed() && heldDuration < requiredHoldDuration)
                 {
@@ -846,14 +873,21 @@ public sealed class CharacterEyes : MonoBehaviour
                     yield return null;
                 }
 
-                SetMouthwashAudio(false);
+                if (coffeeSip)
+        {
+            SetCoffeeSipAudio(false);
+        }
+        else
+        {
+            SetMouthwashAudio(false);
+        }
                 if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
 
                 if (heldDuration >= requiredHoldDuration)
                     break;
 
-                // An early release pauses the action. The player can move the bottle
-                // again and resume by pressing over the mouth; held progress is kept.
+                // An early release pauses the action. The player can reposition the hand
+                // and resume by pressing over the mouth; held progress is kept.
                 hand.sprite = mouthwashIdleHand;
                 MoveInteractionHandTipWithPointer(mouthwashBottleTipNormalized);
             }
@@ -865,13 +899,27 @@ public sealed class CharacterEyes : MonoBehaviour
             yield return null;
         }
 
-        SetMouthwashAudio(false);
+        if (coffeeSip)
+        {
+            SetCoffeeSipAudio(false);
+        }
+        else
+        {
+            SetMouthwashAudio(false);
+        }
         if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
         hand.sprite = pointingHand != null ? pointingHand : originalHandSprite;
         hand.transform.localScale = originalHandScale;
         hand.transform.localRotation = originalHandRotation;
         hand.enabled = true;
-        mouthwashUseActive = false;
+        if (coffeeSip)
+        {
+            coffeeUseActive = false;
+        }
+        else
+        {
+            mouthwashUseActive = false;
+        }
     }
     private IEnumerator ToothbrushUseSequence()
     {
@@ -969,6 +1017,31 @@ public sealed class CharacterEyes : MonoBehaviour
         else if (mouthwashAudioSource.isPlaying)
         {
             mouthwashAudioSource.Stop();
+        }
+    }
+    private void SetCoffeeSipAudio(bool shouldPlay)
+    {
+        if (coffeeSipAudioSource == null && shouldPlay && sippingCoffeeSound != null)
+        {
+            coffeeSipAudioSource = gameObject.AddComponent<AudioSource>();
+            coffeeSipAudioSource.playOnAwake = false;
+            coffeeSipAudioSource.spatialBlend = 0f;
+        }
+        if (coffeeSipAudioSource == null) return;
+
+        if (shouldPlay && sippingCoffeeSound != null)
+        {
+            if (coffeeSipAudioSource.clip != sippingCoffeeSound || !coffeeSipAudioSource.loop)
+            {
+                coffeeSipAudioSource.Stop();
+                coffeeSipAudioSource.clip = sippingCoffeeSound;
+                coffeeSipAudioSource.loop = true;
+            }
+            if (!coffeeSipAudioSource.isPlaying) coffeeSipAudioSource.Play();
+        }
+        else if (coffeeSipAudioSource.isPlaying)
+        {
+            coffeeSipAudioSource.Stop();
         }
     }
     private void SetToothbrushAudio(bool shouldPlay)
