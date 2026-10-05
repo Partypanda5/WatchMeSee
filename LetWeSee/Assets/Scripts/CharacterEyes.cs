@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
@@ -63,6 +64,25 @@ public sealed class CharacterEyes : MonoBehaviour
     [Tooltip("How far the turning parts slide sideways when the eyes, on average, look fully left or right. Negative flips the direction.")]
     [SerializeField, Range(-1f, 1f)] private float turnTravel = 0.07f;
     [SerializeField, Range(1f, 30f)] private float featureFollowSpeed = 8f;
+
+    [Header("Blinking")]
+    [Tooltip("Shortest and longest wait between blinks, in seconds.")]
+    [SerializeField] private Vector2 blinkInterval = new Vector2(3f, 7f);
+    [Tooltip("Time for the lids to close and open again, in seconds.")]
+    [SerializeField, Range(0.1f, 3f)] private float blinkDuration = 1f;
+    [Tooltip("Where the lids meet when closed: 0 = at the bottom lid, 1 = at the top lid.")]
+    [SerializeField, Range(0f, 1f)] private float blinkMeetPoint = 0.3f;
+    [Tooltip("How far the lids overlap when shut, so no gap shows.")]
+    [SerializeField, Range(0f, 0.3f)] private float blinkOverlap = 0.03f;
+
+    [Header("Face poking")]
+    [Tooltip("How much of the mouse drag a grabbed face part follows.")]
+    [SerializeField, Range(0f, 1f)] private float facePokeFollow = 0.12f;
+    [Tooltip("Furthest a grabbed face part can be pulled from where it sits, in world units.")]
+    [SerializeField, Range(0f, 1f)] private float facePokeMaxDistance = 0.15f;
+    [SerializeField, Range(1f, 40f)] private float facePokeReturnSpeed = 14f;
+    [Tooltip("Face parts that can't be grabbed (and their children).")]
+    [SerializeField] private Transform[] facePokeIgnore = new Transform[0];
 
     [Header("Hand")]
     [Tooltip("Follows the pointer by its pivot (the fingertip). While dragging an eye it only moves as far as the pupil does.")]
@@ -132,6 +152,15 @@ public sealed class CharacterEyes : MonoBehaviour
     private Vector3 leftBrowRest;
     private Vector3 rightBrowRest;
     private Vector3[] turningRest;
+    private Transform pokedPart;
+    private float blinkAmount;
+    private float blinkStartTime = -1f;
+    private float nextBlinkTime = -1f;
+    private Vector3 pokeStartWorld;
+    private Vector3 lastPokeWorld;
+    private readonly Dictionary<Transform, Vector3> pokeOffsets = new Dictionary<Transform, Vector3>();
+    private readonly Dictionary<Transform, Vector3> pokeRest = new Dictionary<Transform, Vector3>();
+    private readonly List<Transform> pokeFinished = new List<Transform>();
     private float leftBrowOffset;
     private float rightBrowOffset;
     private float turnOffset;
@@ -523,9 +552,123 @@ public sealed class CharacterEyes : MonoBehaviour
             HandleInput();
 
         UpdateDragSquishAudio();
+        UpdateBlink();
         UpdateEye(leftEye);
         UpdateEye(rightEye);
         UpdateFaceFeatures();
+        UpdateFacePokes();
+    }
+
+    // Every few seconds both eyes blink: the lids close and open over blinkDuration. Never while an eye is being dragged.
+    private void UpdateBlink()
+    {
+        if (nextBlinkTime < 0f) ScheduleNextBlink();
+        bool draggingEye = dragged != null && eyeDrag != null && eyeDrag.IsPressed();
+        if (draggingEye)
+        {
+            blinkStartTime = -1f;
+            blinkAmount = Mathf.MoveTowards(blinkAmount, 0f, Time.deltaTime * 6f);
+            ScheduleNextBlink();
+            return;
+        }
+
+        if (blinkStartTime < 0f && Time.time >= nextBlinkTime) blinkStartTime = Time.time;
+        if (blinkStartTime >= 0f)
+        {
+            float t = (Time.time - blinkStartTime) / Mathf.Max(0.01f, blinkDuration);
+            if (t >= 1f)
+            {
+                blinkStartTime = -1f;
+                ScheduleNextBlink();
+                t = 1f;
+            }
+            blinkAmount = Mathf.Sin(t * Mathf.PI);
+        }
+        else
+        {
+            blinkAmount = Mathf.MoveTowards(blinkAmount, 0f, Time.deltaTime * 6f);
+        }
+    }
+
+    private void ScheduleNextBlink()
+    {
+        nextBlinkTime = Time.time + Random.Range(Mathf.Min(blinkInterval.x, blinkInterval.y), Mathf.Max(blinkInterval.x, blinkInterval.y));
+    }
+
+    // Grabbing a face part (anything but the eyes and hand) and dragging nudges it slightly; it springs back on release.
+    private void StartFacePoke(Vector3 world)
+    {
+        pokedPart = null;
+        int highestOrder = int.MinValue;
+        foreach (SpriteRenderer part in GetComponentsInChildren<SpriteRenderer>())
+        {
+            if (!part.enabled || part == hand || IsPartOfEye(part.transform) || IsPokeIgnored(part.transform)) continue;
+            Bounds b = part.bounds;
+            if (world.x < b.min.x || world.x > b.max.x || world.y < b.min.y || world.y > b.max.y) continue;
+            if (part.sortingOrder <= highestOrder) continue;
+            highestOrder = part.sortingOrder;
+            pokedPart = part.transform;
+        }
+        if (pokedPart == null) return;
+        pokeStartWorld = world;
+        if (!pokeOffsets.ContainsKey(pokedPart)) pokeOffsets[pokedPart] = Vector3.zero;
+        if (!IsGazeDrivenPart(pokedPart) && !pokeRest.ContainsKey(pokedPart)) pokeRest[pokedPart] = pokedPart.localPosition;
+    }
+
+    private void UpdateFacePokes()
+    {
+        if (pokeOffsets.Count == 0) return;
+        bool held = eyeDrag != null && eyeDrag.IsPressed() && pokedPart != null;
+        if (!held) pokedPart = null;
+        float blend = 1f - Mathf.Exp(-facePokeReturnSpeed * Time.deltaTime);
+
+        pokeFinished.Clear();
+        foreach (Transform part in new List<Transform>(pokeOffsets.Keys))
+        {
+            if (part == null) { pokeFinished.Add(part); continue; }
+            Vector3 wanted = Vector3.zero;
+            if (held && part == pokedPart && part.parent != null)
+            {
+                Vector3 worldPull = (lastPokeWorld - pokeStartWorld) * facePokeFollow;
+                worldPull = Vector3.ClampMagnitude(new Vector3(worldPull.x, worldPull.y, 0f), facePokeMaxDistance);
+                wanted = part.parent.InverseTransformVector(worldPull);
+            }
+            Vector3 offset = Vector3.Lerp(pokeOffsets[part], wanted, blend);
+            pokeOffsets[part] = offset;
+
+            // Brows and turning parts are repositioned by the gaze every frame, so the nudge is added on top.
+            if (IsGazeDrivenPart(part)) part.localPosition += offset;
+            else if (pokeRest.TryGetValue(part, out Vector3 rest)) part.localPosition = rest + offset;
+
+            if (part != pokedPart && offset.sqrMagnitude < 0.0000001f) pokeFinished.Add(part);
+        }
+        foreach (Transform part in pokeFinished)
+        {
+            if (part != null && pokeRest.TryGetValue(part, out Vector3 rest)) part.localPosition = rest;
+            pokeOffsets.Remove(part);
+            pokeRest.Remove(part);
+        }
+    }
+
+    private bool IsPokeIgnored(Transform part)
+    {
+        foreach (Transform ignored in facePokeIgnore)
+            if (ignored != null && (part == ignored || part.IsChildOf(ignored))) return true;
+        return false;
+    }
+
+    private bool IsPartOfEye(Transform part)
+    {
+        return (leftEye.root != null && (part == leftEye.root || part.IsChildOf(leftEye.root))) ||
+            (rightEye.root != null && (part == rightEye.root || part.IsChildOf(rightEye.root)));
+    }
+
+    private bool IsGazeDrivenPart(Transform part)
+    {
+        if (part == leftBrow || part == rightBrow) return true;
+        foreach (Transform turning in turningParts)
+            if (turning == part) return true;
+        return false;
     }
 
     // Each brow follows its own eye up and down; the turning parts slide sideways together with the average gaze.
@@ -571,8 +714,10 @@ public sealed class CharacterEyes : MonoBehaviour
             else if (cam.pixelRect.Contains(screen))
             {
                 faceTapPending = true;
+                StartFacePoke(world);
             }
         }
+        lastPokeWorld = world;
 
         if (!eyeDrag.IsPressed())
         {
@@ -1295,7 +1440,6 @@ public sealed class CharacterEyes : MonoBehaviour
             float wanted = edge - eye.topEdgeRest;
             // Opening snaps so the pupil is never covered; closing eases.
             eye.topOffset = wanted > eye.topOffset ? wanted : Mathf.Lerp(eye.topOffset, wanted, lidStep);
-            eye.topLid.position = ToWorld(eye, eye.topLidRest + Vector2.up * eye.topOffset, eye.topLid.position.z);
         }
 
         if (eye.bottomLid != null)
@@ -1306,8 +1450,23 @@ public sealed class CharacterEyes : MonoBehaviour
             edge = Mathf.Min(edge, clearEdge);
             float wanted = edge - eye.bottomEdgeRest;
             eye.bottomOffset = wanted < eye.bottomOffset ? wanted : Mathf.Lerp(eye.bottomOffset, wanted, lidStep);
-            eye.bottomLid.position = ToWorld(eye, eye.bottomLidRest + Vector2.up * eye.bottomOffset, eye.bottomLid.position.z);
         }
+
+        // Blinking pulls both lids towards a meeting point between them, on top of where they'd otherwise sit.
+        float topShown = eye.topOffset;
+        float bottomShown = eye.bottomOffset;
+        if (blinkAmount > 0f && eye.topLid != null && eye.bottomLid != null)
+        {
+            float topEdge = eye.topEdgeRest + eye.topOffset;
+            float bottomEdge = eye.bottomEdgeRest + eye.bottomOffset;
+            float meet = Mathf.Lerp(bottomEdge, topEdge, blinkMeetPoint);
+            topShown += (meet - blinkOverlap - topEdge) * blinkAmount;
+            bottomShown += (meet + blinkOverlap - bottomEdge) * blinkAmount;
+        }
+        if (eye.topLid != null)
+            eye.topLid.position = ToWorld(eye, eye.topLidRest + Vector2.up * topShown, eye.topLid.position.z);
+        if (eye.bottomLid != null)
+            eye.bottomLid.position = ToWorld(eye, eye.bottomLidRest + Vector2.up * bottomShown, eye.bottomLid.position.z);
     }
 
     // Keeps the pupil inside the eyeball. The lids move out of its way rather than limiting it.

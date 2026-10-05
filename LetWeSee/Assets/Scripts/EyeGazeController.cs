@@ -47,6 +47,9 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Sprite dialogueBoxSprite;
     [SerializeField] private Font dialogueFont;
     [SerializeField] private Transform dateDialogueTarget;
+    [Tooltip("Shown if the player hasn't dragged an eye a few seconds after the first dialogue. Hidden as soon as they do.")]
+    [SerializeField] private GameObject dragEyesPrompt;
+    [SerializeField, Range(0f, 30f)] private float dragEyesPromptDelay = 5f;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceHeightRatio = 0.88f;
 
@@ -140,6 +143,11 @@ public sealed class EyeGazeController : MonoBehaviour
     private int cafeDialoguePhase;
     private bool dialogueOnDateSide;
     private Coroutine dialogueTextAnimation;
+    private Coroutine dragEyesPromptRoutine;
+    private bool dragEyesPromptUsed;
+    private bool eyeDraggedSincePrompt;
+    private string dialogueLineBeingTyped;
+    private Vector2 dialogueTextRestPosition;
     private static readonly string[] IntroDialogueLines =
     {
         "ugh... my eyes get so damn itchy when i wake up",
@@ -590,6 +598,7 @@ public sealed class EyeGazeController : MonoBehaviour
     // Grabbing an eye on the sprite face exits focus. The eyes stay where they were aimed.
     private void OnCharacterDragStarted()
     {
+        HideDragEyesPrompt();
         characterEyeDragActive = true;
         if (!focused) return;
         focused = false;
@@ -749,7 +758,20 @@ public sealed class EyeGazeController : MonoBehaviour
         if (characterEyes != null)
             characterEyes.PlayDialogueVoice(dialogueOnDateSide);
 
+        dialogueLineBeingTyped = line;
         dialogueTextAnimation = StartCoroutine(AnimateIntroDialogueLine(line));
+    }
+
+    // Skips the typing: shows the whole line exactly as it looks once typing has finished.
+    private void FinishIntroDialogueLine()
+    {
+        StopIntroDialogueAnimation();
+        if (introDialogueText == null || dialogueLineBeingTyped == null) return;
+        string[] words = dialogueLineBeingTyped.Split(new[] { ' ' }, System.StringSplitOptions.RemoveEmptyEntries);
+        introDialogueText.text = string.Join(" ", words);
+        RectTransform textRect = introDialogueText.rectTransform;
+        textRect.localScale = Vector3.one;
+        textRect.anchoredPosition = dialogueTextRestPosition;
     }
 
     private void StopIntroDialogueAnimation()
@@ -769,6 +791,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
         RectTransform textRect = introDialogueText.rectTransform;
         Vector2 restingPosition = textRect.anchoredPosition;
+        dialogueTextRestPosition = restingPosition;
         string[] words = line.Split(' ');
         string completedText = string.Empty;
         introDialogueText.text = string.Empty;
@@ -838,8 +861,15 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialoguePanel.localScale = Vector3.Lerp(
             introDialoguePanel.localScale, Vector3.one * targetScale, scaleBlend);
 
-        if (dialogueTextAnimation != null || !focusClick.WasPressedThisFrame() || !hovering)
+        if (!focusClick.WasPressedThisFrame() || !hovering)
             return;
+
+        // Clicking while the line is still typing finishes it; the next click moves on.
+        if (dialogueTextAnimation != null)
+        {
+            FinishIntroDialogueLine();
+            return;
+        }
 
         introDialogueIndex++;
         if (activeDialogueLines != null && introDialogueIndex < activeDialogueLines.Length)
@@ -866,6 +896,34 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
         }
         if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
+        StartDragEyesPrompt();
+    }
+
+    // Only after the first dialogue: if no eye has been dragged by the delay, show the prompt.
+    private void StartDragEyesPrompt()
+    {
+        if (dragEyesPrompt == null || dragEyesPromptUsed) return;
+        dragEyesPromptUsed = true;
+        eyeDraggedSincePrompt = false;
+        dragEyesPromptRoutine = StartCoroutine(ShowDragEyesPromptAfterDelay());
+    }
+
+    private IEnumerator ShowDragEyesPromptAfterDelay()
+    {
+        yield return new WaitForSecondsRealtime(dragEyesPromptDelay);
+        dragEyesPromptRoutine = null;
+        if (!eyeDraggedSincePrompt && dragEyesPrompt != null) dragEyesPrompt.SetActive(true);
+    }
+
+    private void HideDragEyesPrompt()
+    {
+        eyeDraggedSincePrompt = true;
+        if (dragEyesPromptRoutine != null)
+        {
+            StopCoroutine(dragEyesPromptRoutine);
+            dragEyesPromptRoutine = null;
+        }
+        if (dragEyesPrompt != null && dragEyesPrompt.activeSelf) dragEyesPrompt.SetActive(false);
     }
 
     private void AdvanceCafeDialogueSequence()
@@ -991,6 +1049,7 @@ public sealed class EyeGazeController : MonoBehaviour
                 draggedEye = DraggedEye.Right;
 
             // Starting a new eye drag exits focus and returns both eyes to their neutral aim.
+            if (draggedEye != DraggedEye.None) HideDragEyesPrompt();
             if (draggedEye != DraggedEye.None && focused)
             {
                 focused = false;
