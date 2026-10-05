@@ -120,6 +120,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private int introDialogueIndex;
     private RectTransform introDialoguePanel;
     private Text introDialogueText;
+    private string[] activeDialogueLines;
     private Coroutine dialogueTextAnimation;
     private static readonly string[] IntroDialogueLines =
     {
@@ -132,13 +133,27 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void Start()
     {
-        if (leftPanel == null || focusClick == null) return;
+        BeginDialogue(IntroDialogueLines);
+    }
 
-        CreateIntroDialogueBox();
-        if (introDialoguePanel == null) return;
+    private void BeginDialogue(string[] lines)
+    {
+        if (lines == null || lines.Length == 0 || leftPanel == null || focusClick == null) return;
 
-        introDialogueActive = true;
+        activeDialogueLines = lines;
         introDialogueIndex = 0;
+        introDialogueActive = true;
+        if (introDialoguePanel == null)
+            CreateIntroDialogueBox();
+        else
+            SetIntroDialogueLine(activeDialogueLines[0]);
+
+        if (introDialoguePanel == null)
+        {
+            introDialogueActive = false;
+            return;
+        }
+
         if (characterEyes != null) characterEyes.SetIntroDialogueLocked(true);
         Cursor.visible = true;
     }
@@ -546,8 +561,8 @@ public sealed class EyeGazeController : MonoBehaviour
 
         // The speech tip sits near 62% across and 92% up the source sprite.
         Vector2 tailOffset = new Vector2(
-            (0.62f - introDialoguePanel.pivot.x) * introDialoguePanel.rect.width,
-            0.92f * introDialoguePanel.rect.height);
+            (0.62f - introDialoguePanel.pivot.x) * introDialoguePanel.rect.width * introDialoguePanel.localScale.x,
+            0.92f * introDialoguePanel.rect.height * introDialoguePanel.localScale.y);
         Vector2 anchorReference = new Vector2(
             Mathf.Lerp(leftPanel.rect.xMin, leftPanel.rect.xMax, 0.5f),
             Mathf.Lerp(leftPanel.rect.yMin, leftPanel.rect.yMax, 0.095f));
@@ -597,7 +612,7 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialogueText.verticalOverflow = VerticalWrapMode.Truncate;
         introDialogueText.color = new Color(0.16f, 0.08f, 0.05f, 1f);
         introDialogueText.raycastTarget = false;
-        SetIntroDialogueLine(IntroDialogueLines[0]);
+        SetIntroDialogueLine(activeDialogueLines[0]);
     }
 
     private void SetIntroDialogueLine(string line)
@@ -657,14 +672,19 @@ public sealed class EyeGazeController : MonoBehaviour
         if (pointerPosition == null || focusClick == null || introDialoguePanel == null) return;
 
         Vector2 pointer = pointerPosition.ReadValue<Vector2>();
-        if (!focusClick.WasPressedThisFrame() ||
-            !RectTransformUtility.RectangleContainsScreenPoint(introDialoguePanel, pointer, null))
+        bool hovering = RectTransformUtility.RectangleContainsScreenPoint(introDialoguePanel, pointer, null);
+        float targetScale = hovering ? 1.04f : 1f;
+        float scaleBlend = 1f - Mathf.Exp(-14f * Time.unscaledDeltaTime);
+        introDialoguePanel.localScale = Vector3.Lerp(
+            introDialoguePanel.localScale, Vector3.one * targetScale, scaleBlend);
+
+        if (!focusClick.WasPressedThisFrame() || !hovering)
             return;
 
         introDialogueIndex++;
-        if (introDialogueIndex < IntroDialogueLines.Length)
+        if (activeDialogueLines != null && introDialogueIndex < activeDialogueLines.Length)
         {
-            SetIntroDialogueLine(IntroDialogueLines[introDialogueIndex]);
+            SetIntroDialogueLine(activeDialogueLines[introDialogueIndex]);
             return;
         }
 
@@ -760,8 +780,8 @@ public sealed class EyeGazeController : MonoBehaviour
                     focused = true;
                     if (lockedFocusTarget == mirrorTarget)
                     {
-                        Debug.Log("wow you look so pretty");
                         sequenceComplete = true;
+                        BeginDialogue(new[] { "that's as good as it's gonna get..." });
                     }
                 }
             }
