@@ -33,6 +33,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform[] focusTargets = new Transform[0];
     [Tooltip("How big an item swells when the eyes line up on it (1 = no swell).")]
     [SerializeField, Range(1f, 1.5f)] private float focusPopScale = 1.035f;
+    [Tooltip("Start each scene with both eyes focused on whatever is straight ahead; once the opening dialogue is done the eyes wander off to random aims. Off = random aims from the start.")]
+    [SerializeField] private bool startFocusedForward = true;
     [SerializeField] private Transform deodorantTarget;
     [SerializeField] private Transform mouthwashTarget;
     [SerializeField] private Transform toothbrushTarget;
@@ -104,6 +106,8 @@ public sealed class EyeGazeController : MonoBehaviour
     private Vector3 leftCameraStart;
     private Vector3 rightCameraStart;
     private bool gazeSnapped;
+    private bool startFocusActive;
+    private bool startFocusSawDialogue;
     private Renderer[] gazeRenderers;
     private bool rightEyeMovedLast = true;
     private Vector2 previousLeftAim;
@@ -241,8 +245,10 @@ public sealed class EyeGazeController : MonoBehaviour
         if (rightEyeView != null) rightImageColor = rightEyeView.color;
 
 
-        leftAim = RandomStartingAim();
-        rightAim = RandomStartingAim();
+        // Start looking straight ahead and focused on whatever is there, until the opening dialogue is done.
+        startFocusActive = startFocusedForward;
+        leftAim = startFocusActive ? Vector2.zero : RandomStartingAim();
+        rightAim = startFocusActive ? Vector2.zero : RandomStartingAim();
         if (characterEyes != null)
         {
             characterEyes.SetAims(leftAim, rightAim);
@@ -604,6 +610,8 @@ public sealed class EyeGazeController : MonoBehaviour
     // Grabbing an eye on the sprite face exits focus. The eyes stay where they were aimed.
     private void OnCharacterDragStarted()
     {
+        // Scenes without an opening dialogue: grabbing an eye ends the start focus.
+        startFocusActive = false;
         HideDragEyesPrompt();
         characterEyeDragActive = true;
         if (!focused) return;
@@ -613,6 +621,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void LateUpdate()
     {
+        UpdateStartFocus();
         // The player's mouth moves while one of their own dialogue lines is typing out.
         if (characterEyes != null)
             characterEyes.SetTalking(introDialogueActive && !dialogueOnDateSide && dialogueTextAnimation != null);
@@ -1123,7 +1132,11 @@ public sealed class EyeGazeController : MonoBehaviour
                 draggedEye = DraggedEye.Right;
 
             // Starting a new eye drag exits focus and returns both eyes to their neutral aim.
-            if (draggedEye != DraggedEye.None) HideDragEyesPrompt();
+            if (draggedEye != DraggedEye.None)
+            {
+                HideDragEyesPrompt();
+                startFocusActive = false;
+            }
             if (draggedEye != DraggedEye.None && focused)
             {
                 focused = false;
@@ -1209,7 +1222,18 @@ public sealed class EyeGazeController : MonoBehaviour
             rightAim.x * cameraAimRotationDegrees,
             0f);
 
-        ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
+        if (startFocusActive)
+        {
+            // Both eyes converge on whatever is straight ahead of the point between them.
+            Vector3 straightAhead = FindGazePoint(new Ray(eyesCenter, leftCameraStartRotation * Vector3.forward), leftCamera);
+            wantedLeftRotation = Quaternion.LookRotation(straightAhead - wantedLeftCamera, Vector3.up);
+            wantedRightRotation = Quaternion.LookRotation(straightAhead - wantedRightCamera, Vector3.up);
+            gazeSnapped = true;
+        }
+        else
+        {
+            ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
+        }
 
         leftCamera.transform.position = Vector3.Lerp(
             leftCamera.transform.position, wantedLeftCamera, Time.deltaTime * followSpeed);
@@ -1771,6 +1795,23 @@ public sealed class EyeGazeController : MonoBehaviour
         grabHandImage.rectTransform.anchoredPosition = to;
         handColor.a = fadeOut ? 0f : 1f;
         grabHandImage.color = handColor;
+    }
+
+    // The start focus lasts through the opening dialogue; when it closes the eyes wander off to random aims.
+    private void UpdateStartFocus()
+    {
+        if (!startFocusActive) return;
+        if (introDialogueActive)
+        {
+            startFocusSawDialogue = true;
+            return;
+        }
+        if (!startFocusSawDialogue) return;
+
+        startFocusActive = false;
+        leftAim = RandomStartingAim();
+        rightAim = RandomStartingAim();
+        if (characterEyes != null) characterEyes.SetAims(leftAim, rightAim);
     }
 
     private Vector2 RandomStartingAim()
