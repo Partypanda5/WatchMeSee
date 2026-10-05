@@ -43,16 +43,15 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField, Range(0f, 12f)] private float cameraTravel = 10f;
     [Tooltip("Distance between the two eye cameras on the x axis, centred on where they start. Can be changed while playing.")]
     [SerializeField, Range(0f, 5f)] private float eyeSeparation = 1f;
-    [Tooltip("When the points the two eyes look at are this close, the moving eye snaps onto the other eye's point.")]
-    [SerializeField, Range(0f, 10f)] private float gazeSnapDistance = 0.2f;
-    [Tooltip("How far the moving eye's own point has to get from the other's before the snap breaks off. Keep it above the snap distance.")]
-    [SerializeField, Range(0f, 10f)] private float gazeSnapReleaseDistance = 0.3f;
+    [Tooltip("When the two eyes' gaze points are within this angle of each other (seen from between the eyes), the moving eye snaps onto the other's point. An angle works the same up close and far away.")]
+    [SerializeField, Range(0f, 10f)] private float gazeSnapAngle = 0.7f;
+    [Tooltip("Angle the moving eye's own point has to get from the other's before the snap breaks off. Keep it above the snap angle.")]
+    [SerializeField, Range(0f, 10f)] private float gazeSnapReleaseAngle = 1f;
     [SerializeField, Range(0f, 45f)] private float cameraAimRotationDegrees = 28f;
     [SerializeField, Range(0f, 0.8f)] private float fisheyeStrength = 0.45f;
     [SerializeField, Range(0f, 1f)] private float maximumMisalignmentBlur = 1f;
     [SerializeField, Range(0f, 24f)] private float maximumBlurRadiusPixels = 12f;
     [SerializeField, Range(0.1f, 45f)] private float maximumCameraSeparationForBlurDegrees = 20f;
-    [SerializeField, Range(1f, 100f)] private float focusRayDistance = 40f;
     [SerializeField, Range(0.05f, 1f)] private float focusSphereCastRadius = 0.4f;
     [SerializeField, Range(0.005f, 0.2f)] private float focusPointRadius = 0.1f;
     [SerializeField, Range(0f, 100f)] private float focusAlignmentTolerancePixels = 48f;
@@ -850,8 +849,9 @@ public sealed class EyeGazeController : MonoBehaviour
 
         Vector3 leftPoint = FindGazePoint(new Ray(leftPosition, leftRotation * Vector3.forward), leftCamera);
         Vector3 rightPoint = FindGazePoint(new Ray(rightPosition, rightRotation * Vector3.forward), rightCamera);
-        float limit = gazeSnapped ? Mathf.Max(gazeSnapDistance, gazeSnapReleaseDistance) : gazeSnapDistance;
-        gazeSnapped = Vector3.Distance(leftPoint, rightPoint) <= limit;
+        Vector3 eyesMiddle = (leftPosition + rightPosition) * 0.5f;
+        float limit = gazeSnapped ? Mathf.Max(gazeSnapAngle, gazeSnapReleaseAngle) : gazeSnapAngle;
+        gazeSnapped = Vector3.Angle(leftPoint - eyesMiddle, rightPoint - eyesMiddle) <= limit;
 
         // Visible in the Scene view while playing: red = left eye, cyan = right eye, green when snapped.
         Debug.DrawLine(leftPosition, leftPoint, gazeSnapped ? Color.green : Color.red);
@@ -870,11 +870,11 @@ public sealed class EyeGazeController : MonoBehaviour
             leftRotation = Quaternion.LookRotation(rightPoint - leftPosition, Vector3.up);
     }
 
-    // Where an eye ray first meets anything the eye camera can see (sprites and meshes), or the focus ray distance.
+    // Where an eye ray first meets anything the eye camera can see (sprites and meshes), or the far clip distance.
     private Vector3 FindGazePoint(Ray ray, Camera eyeCamera)
     {
         if (gazeRenderers == null) gazeRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
-        float nearestDistance = Mathf.Max(eyeCamera.nearClipPlane, focusRayDistance);
+        float nearestDistance = eyeCamera.farClipPlane;
         foreach (Renderer candidate in gazeRenderers)
         {
             if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy ||
@@ -1357,10 +1357,10 @@ public sealed class EyeGazeController : MonoBehaviour
         return FindRayHit(eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f)), eyeCamera);
     }
 
-    // Nearest sprite or mesh along the ray, or the point at the focus ray distance if nothing is hit.
+    // Nearest sprite or mesh along the ray, or the point at the camera's far clip distance if nothing is hit.
     private CenterRayHit FindRayHit(Ray ray, Camera eyeCamera)
     {
-        float nearestDistance = Mathf.Max(eyeCamera.nearClipPlane, focusRayDistance);
+        float nearestDistance = eyeCamera.farClipPlane;
         Renderer nearestRenderer = null;
 
         foreach (Renderer candidate in focusRayRenderers)
@@ -1395,7 +1395,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (eyeCamera == null || target == null) return false;
         Ray ray = eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f));
         RaycastHit[] hits = Physics.SphereCastAll(
-            ray, focusSphereCastRadius, focusRayDistance, eyeCamera.cullingMask, QueryTriggerInteraction.Collide);
+            ray, focusSphereCastRadius, eyeCamera.farClipPlane, eyeCamera.cullingMask, QueryTriggerInteraction.Collide);
 
         float nearestDistance = float.PositiveInfinity;
         Collider nearestCollider = null;

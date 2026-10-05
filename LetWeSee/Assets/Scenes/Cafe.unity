@@ -9113,14 +9113,13 @@ MonoBehaviour:
   pupilTravel: 14
   cameraTravel: 10
   eyeSeparation: 1
-  gazeSnapDistance: 0.2
-  gazeSnapReleaseDistance: 0.3
+  gazeSnapAngle: 0.7
+  gazeSnapReleaseAngle: 1
   cameraAimRotationDegrees: 28
   fisheyeStrength: 0.45
   maximumMisalignmentBlur: 1
   maximumBlurRadiusPixels: 12
   maximumCameraSeparationForBlurDegrees: 20
-  focusRayDistance: 40
   focusSphereCastRadius: 0.4
   focusPointRadius: 0.1
   focusAlignmentTolerancePixels: 48
