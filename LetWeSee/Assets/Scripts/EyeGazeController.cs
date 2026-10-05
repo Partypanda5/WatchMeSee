@@ -1616,6 +1616,8 @@ public sealed class EyeGazeController : MonoBehaviour
         UpdateSequenceLabelVisibility();
         if (target == deodorantTarget && characterEyes != null)
             characterEyes.BeginDeodorantUse();
+        else if (target == glassesTarget && SceneManager.GetActiveScene().name == "Cafe" && characterEyes != null)
+            characterEyes.HoldGlasses();
         else if (target == mouthwashTarget && characterEyes != null)
             characterEyes.BeginMouthwashUse();
         else if (target == toothbrushTarget && characterEyes != null)

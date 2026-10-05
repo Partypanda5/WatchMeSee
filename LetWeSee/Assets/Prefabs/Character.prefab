@@ -3138,6 +3138,7 @@ MonoBehaviour:
   coffeeSipHand: {fileID: 21300000, guid: 1cbeac3695026b143835a600b5bd31aa, type: 3}
   toothbrushIdleHand: {fileID: 21300000, guid: a539b0b1297363643adc60dfac0e5b8d, type: 3}
   toothbrushHoldHand: {fileID: 21300000, guid: 7e2588926d96b33418e30b5cad5a7d67, type: 3}
+  holdingGlassesHand: {fileID: 9019146299405982947, guid: 71a5a19c19373da4b837680973e043c2, type: 3}
   mouthVisual: {fileID: 2850158083860305927}
   mouthwashBottleTipNormalized: {x: -0.46, y: 0.42}
   toothbrushTipNormalized: {x: -0.48, y: 0.4}
