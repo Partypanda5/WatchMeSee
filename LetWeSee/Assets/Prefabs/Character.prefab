@@ -3139,6 +3139,7 @@ MonoBehaviour:
   toothbrushIdleHand: {fileID: 21300000, guid: a539b0b1297363643adc60dfac0e5b8d, type: 3}
   toothbrushHoldHand: {fileID: 21300000, guid: 7e2588926d96b33418e30b5cad5a7d67, type: 3}
   mouthVisual: {fileID: 2850158083860305927}
+  talkingMouthSprite: {fileID: 21300000, guid: 58b53d1272fadaa4da61703c27a83a9f, type: 3}
   mouthwashBottleTipNormalized: {x: -0.46, y: 0.42}
   toothbrushTipNormalized: {x: -0.48, y: 0.4}
   deodorantSpraySound: {fileID: 8300000, guid: 2a09fbf05fcbe274d8b0a02410e40c8e, type: 3}

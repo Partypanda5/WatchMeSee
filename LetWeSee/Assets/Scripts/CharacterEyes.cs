@@ -65,6 +65,9 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField, Range(-1f, 1f)] private float turnTravel = 0.07f;
     [SerializeField, Range(1f, 30f)] private float featureFollowSpeed = 8f;
 
+    [Tooltip("How far below the bottom of the face view the end of the arm is kept, so it never shows.")]
+    [SerializeField, Range(0f, 5f)] private float armBelowViewMargin = 1f;
+
     [Header("Blinking")]
     [Tooltip("Shortest and longest wait between blinks, in seconds.")]
     [SerializeField] private Vector2 blinkInterval = new Vector2(3f, 7f);
@@ -94,6 +97,8 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite deodorantIdleHand;
     [SerializeField] private Sprite mouthwashIdleHand;
     [SerializeField] private Sprite mouthwashHoldHand;
+    [Tooltip("How much of the mouse movement the toothbrush follows while brushing (1 = normal).")]
+    [SerializeField, Range(0.05f, 1f)] private float toothbrushBrushSensitivity = 0.35f;
     [Header("Coffee")]
     [SerializeField] private Sprite coffeeIdleHand;
     [SerializeField] private Sprite coffeeSipHand;
@@ -110,6 +115,9 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite toothbrushIdleHand;
     [SerializeField] private Sprite toothbrushHoldHand;
     [SerializeField] private SpriteRenderer mouthVisual;
+    [Tooltip("Swapped with the normal mouth sprite while the player is talking.")]
+    [SerializeField] private Sprite talkingMouthSprite;
+    [SerializeField, Range(0.05f, 3f)] private float mouthFlapInterval = 0.7f;
     [Tooltip("Normalized bottle-tip position within the mouthwash hand sprite.")]
     [SerializeField] private Vector2 mouthwashBottleTipNormalized = new Vector2(-0.46f, 0.42f);
     [SerializeField] private Vector2 toothbrushTipNormalized = new Vector2(-0.48f, 0.4f);
@@ -166,6 +174,10 @@ public sealed class CharacterEyes : MonoBehaviour
     private Vector3 rightBrowRest;
     private Vector3[] turningRest;
     private Transform pokedPart;
+    private bool talking;
+    private bool mouthFlapped;
+    private float nextMouthFlap;
+    private Sprite restingMouthSprite;
     private float blinkAmount;
     private float blinkStartTime = -1f;
     private float nextBlinkTime = -1f;
@@ -359,9 +371,8 @@ public sealed class CharacterEyes : MonoBehaviour
         // CharacterEyes, so pupil and eyelid motion does not depend on child order matching.
         CopyEyePose(source.leftEye, leftEye);
         CopyEyePose(source.rightEye, rightEye);
-
-        if (mirrorCopyMode)
-            KeepMirrorEyesVisible();
+        // The copy keeps its own sprite masks (remapped by the mirror setup), so its eyelids show and blink like the real
+        // face, and the hand stays clipped to the mirror glass.
     }
 
     private static void CopyChildVisualPose(Transform source, Transform target)
@@ -420,21 +431,6 @@ public sealed class CharacterEyes : MonoBehaviour
         target.flipY = source.flipY;
     }
 
-    private void KeepMirrorEyesVisible()
-    {
-        // The face art uses SpriteMasks for eyelids. Their sorting ranges overlap the
-        // mirror's remapped sprite orders, which can leave the copied eyes fully covered.
-        // The mirror has no blink animation, so show the copied eye and pupil sprites directly.
-        foreach (SpriteMask mask in GetComponentsInChildren<SpriteMask>(true))
-            mask.enabled = false;
-
-        foreach (SpriteRenderer sprite in GetComponentsInChildren<SpriteRenderer>(true))
-        {
-            sprite.maskInteraction = SpriteMaskInteraction.None;
-            if (sprite.gameObject.name.IndexOf("lid", System.StringComparison.OrdinalIgnoreCase) >= 0)
-                sprite.enabled = false;
-        }
-    }
     private void SetAim(Eye eye, Vector2 aim)
     {
         if (eye.root == null || eye.pupil == null) return;
@@ -566,10 +562,38 @@ public sealed class CharacterEyes : MonoBehaviour
 
         UpdateDragSquishAudio();
         UpdateBlink();
+        UpdateMouthFlap();
         UpdateEye(leftEye);
         UpdateEye(rightEye);
         UpdateFaceFeatures();
         UpdateFacePokes();
+    }
+
+    // While talking, the mouth swaps between its normal sprite and the talking sprite every mouthFlapInterval.
+    public void SetTalking(bool value)
+    {
+        if (mouthVisual == null || talkingMouthSprite == null || value == talking) return;
+        talking = value;
+        if (talking)
+        {
+            restingMouthSprite = mouthVisual.sprite;
+            mouthFlapped = true;
+            mouthVisual.sprite = talkingMouthSprite;
+            nextMouthFlap = Time.time + mouthFlapInterval;
+        }
+        else if (restingMouthSprite != null)
+        {
+            mouthVisual.sprite = restingMouthSprite;
+            mouthFlapped = false;
+        }
+    }
+
+    private void UpdateMouthFlap()
+    {
+        if (!talking || mouthVisual == null || Time.time < nextMouthFlap) return;
+        mouthFlapped = !mouthFlapped;
+        mouthVisual.sprite = mouthFlapped ? talkingMouthSprite : restingMouthSprite;
+        nextMouthFlap = Time.time + mouthFlapInterval;
     }
 
     // Every few seconds both eyes blink: the lids close and open over blinkDuration. Never while an eye is being dragged.
@@ -833,12 +857,12 @@ public sealed class CharacterEyes : MonoBehaviour
         Vector3 tip = draggingEye
             ? ToWorld(dragged, dragged.pupilCurrent, world.z)
             : world;
+        Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
+        if (wanted != null) hand.sprite = wanted;
         hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
         hand.transform.localScale = Vector3.one * 0.88f;
         hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
-
-        Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
-        if (wanted != null) hand.sprite = wanted;
+        KeepArmReachingViewBottom(cam);
         if (faceTapPending && !draggingEye && pressingHand != null && wanted == pressingHand)
         {
             PlayFaceTap();
@@ -1169,11 +1193,16 @@ public sealed class CharacterEyes : MonoBehaviour
                 Vector2 brushPointer = ClampPointerToMouth(pointer, brushingArea);
                 MoveInteractionHandTipWithPointer(toothbrushTipNormalized, brushPointer);
                 Vector2 lastBrushPointer = brushPointer;
+                Vector2 lastMousePosition = pointer;
                 float lastBrushMovementTime = float.NegativeInfinity;
 
                 while (eyeDrag.IsPressed() && brushedDuration < requiredBrushDuration)
                 {
-                    brushPointer = ClampPointerToMouth(pointerPosition.ReadValue<Vector2>(), brushingArea);
+                    // While brushing, the brush only follows part of the mouse movement.
+                    Vector2 mousePosition = pointerPosition.ReadValue<Vector2>();
+                    brushPointer = ClampPointerToMouth(
+                        brushPointer + (mousePosition - lastMousePosition) * toothbrushBrushSensitivity, brushingArea);
+                    lastMousePosition = mousePosition;
                     MoveInteractionHandTipWithPointer(toothbrushTipNormalized, brushPointer);
 
                     if ((brushPointer - lastBrushPointer).sqrMagnitude >= movementThreshold * movementThreshold)
@@ -1317,6 +1346,20 @@ public sealed class CharacterEyes : MonoBehaviour
         hand.transform.localScale = Vector3.one * 0.88f;
         hand.transform.localRotation = Quaternion.Euler(0f, 0f, -8f);
         hand.transform.position = pointerWorld - GetUseHandTipOffset(tipNormalized);
+        KeepArmReachingViewBottom(cam);
+    }
+
+    // The arm art is shorter than the face view, so stop the hand rising past the point where
+    // the bottom of the arm sprite would come up off the bottom edge of the view.
+    private void KeepArmReachingViewBottom(Camera cam)
+    {
+        if (hand == null || cam == null || hand.sprite == null) return;
+        float depth = hand.transform.position.z - cam.transform.position.z;
+        float viewBottom = cam.ViewportToWorldPoint(new Vector3(0.5f, 0f, depth)).y;
+        float lowestAllowed = viewBottom - armBelowViewMargin;
+        float armBottom = hand.bounds.min.y;
+        if (armBottom > lowestAllowed)
+            hand.transform.position += Vector3.down * (armBottom - lowestAllowed);
     }
     private Vector3 GetUseHandTipOffset(Vector2 tipNormalized)
     {
