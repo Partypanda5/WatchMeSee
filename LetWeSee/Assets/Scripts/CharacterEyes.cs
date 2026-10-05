@@ -114,6 +114,7 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField, Range(0.5f, 30f)] private float coffeeShakeSpeed = 9f;
     [SerializeField] private Sprite toothbrushIdleHand;
     [SerializeField] private Sprite toothbrushHoldHand;
+    [SerializeField] private Sprite holdingGlassesHand;
     [SerializeField] private SpriteRenderer mouthVisual;
     [Tooltip("Swapped with the normal mouth sprite while the player is talking.")]
     [SerializeField] private Sprite talkingMouthSprite;
@@ -156,6 +157,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool mouthwashUseActive;
     private bool toothbrushUseActive;
     private bool coffeeUseActive;
+    private bool glassesHeld;
     private bool introDialogueLocked;
     private Coroutine introHandPopRoutine;
     private Sprite dialogueReturnHandSprite;
@@ -202,6 +204,30 @@ public sealed class CharacterEyes : MonoBehaviour
     public Vector2 LeftAimTarget => Aim(leftEye, leftEye.pupilTarget);
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
     public Sprite PointingHandSprite => pointingHand;
+
+    public void HoldGlasses()
+    {
+        if (hand == null || holdingGlassesHand == null) return;
+        glassesHeld = true;
+        hand.sprite = holdingGlassesHand;
+        hand.enabled = true;
+
+        Bounds eyeBounds = leftEye.eyeBall.bounds;
+        eyeBounds.Encapsulate(rightEye.eyeBall.bounds);
+        float faceHeight = GetFaceBounds().size.y;
+        float parentScale = hand.transform.parent != null ? Mathf.Abs(hand.transform.parent.lossyScale.y) : 1f;
+        hand.transform.localScale = Vector3.one *
+            (faceHeight * 0.9f / Mathf.Max(0.01f, holdingGlassesHand.bounds.size.y * parentScale));
+        hand.transform.localRotation = Quaternion.identity;
+
+        Bounds spriteBounds = holdingGlassesHand.bounds;
+        Vector3 glassesCenterInSprite = new Vector3(
+            spriteBounds.min.x + spriteBounds.size.x * 0.5f,
+            spriteBounds.min.y + spriteBounds.size.y * 0.75f,
+            0f);
+        Vector3 eyeCenter = new Vector3(eyeBounds.center.x, eyeBounds.center.y, hand.transform.position.z);
+        hand.transform.position = eyeCenter - hand.transform.TransformVector(glassesCenterInSprite);
+    }
     public bool IsUsingDeodorant => deodorantUseActive;
     public bool IsUsingMouthwash => mouthwashUseActive;
     public bool IsUsingToothbrush => toothbrushUseActive;
@@ -848,6 +874,12 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (hand == null) return;
 
+        if (glassesHeld)
+        {
+            hand.enabled = true;
+            return;
+        }
+
         // During an eye drag, keep the fingertip on the selected pupil even if the pointer leaves the face panel.
         bool draggingEye = eyeDrag.IsPressed() && dragged != null;
         bool visible = draggingEye || cam.pixelRect.Contains(screen);
@@ -857,7 +889,9 @@ public sealed class CharacterEyes : MonoBehaviour
         Vector3 tip = draggingEye
             ? ToWorld(dragged, dragged.pupilCurrent, world.z)
             : world;
-        Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
+        Sprite wanted = glassesHeld && holdingGlassesHand != null
+            ? holdingGlassesHand
+            : eyeDrag.IsPressed() ? pressingHand : pointingHand;
         if (wanted != null) hand.sprite = wanted;
         hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
         hand.transform.localScale = Vector3.one * 0.88f;

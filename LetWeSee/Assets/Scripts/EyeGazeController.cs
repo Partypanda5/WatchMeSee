@@ -43,6 +43,9 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform npc2Target;
     [SerializeField, Range(1f, 4f)] private float npc2FocusAreaMultiplier = 2.5f;
     [SerializeField] private Renderer npc2Renderer;
+    [Tooltip("NPC2's face as soon as the player locks onto them.")]
+    [SerializeField] private Sprite npc2LookSprite;
+    [Tooltip("NPC2's face after the whisper.")]
     [SerializeField] private Sprite npc2DisgustedSprite;
     [SerializeField] private AudioClip npc2WhisperSound;
     [SerializeField] private AudioClip npc2DisgustSound;
@@ -1224,9 +1227,9 @@ public sealed class EyeGazeController : MonoBehaviour
 
         if (startFocusActive)
         {
-            // Both eyes converge on whatever is straight ahead of the point between them.
-            Vector3 straightAhead = FindGazePoint(new Ray(eyesCenter, leftCameraStartRotation * Vector3.forward), leftCamera);
-            wantedLeftRotation = Quaternion.LookRotation(straightAhead - wantedLeftCamera, Vector3.up);
+            // The left eye looks straight ahead; the right eye turns onto where the left eye's ray lands.
+            wantedLeftRotation = leftCameraStartRotation;
+            Vector3 straightAhead = FindGazePoint(new Ray(wantedLeftCamera, wantedLeftRotation * Vector3.forward), leftCamera);
             wantedRightRotation = Quaternion.LookRotation(straightAhead - wantedRightCamera, Vector3.up);
             gazeSnapped = true;
         }
@@ -1539,6 +1542,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private IEnumerator NPC2ReactionRoutine()
     {
+        SetNPC2Expression(npc2LookSprite);
         if (npc2WhisperSound != null && grabAudioSource != null)
         {
             grabAudioSource.PlayOneShot(npc2WhisperSound);
@@ -1546,7 +1550,6 @@ public sealed class EyeGazeController : MonoBehaviour
         }
 
         SetNPC2Expression(npc2DisgustedSprite);
-        Debug.Log("sprite change");
         if (npc2DisgustSound != null && grabAudioSource != null)
         {
             grabAudioSource.PlayOneShot(npc2DisgustSound);
