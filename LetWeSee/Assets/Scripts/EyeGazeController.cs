@@ -36,6 +36,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [Header("Cafe chair interaction")]
     [SerializeField] private Transform chairManTarget;
     [SerializeField] private Transform chairFocusTarget;
+    [SerializeField, Range(1f, 4f)] private float chairFocusAreaMultiplier = 2.5f;
     [SerializeField] private Renderer chairManRenderer;
     [SerializeField] private Sprite chairManDisgustedSprite;
     [SerializeField] private AudioClip chairManWhisperSound;
@@ -1038,7 +1039,7 @@ public sealed class EyeGazeController : MonoBehaviour
         {
             if ((lockedFocusTarget == chairManTarget || lockedFocusTarget == chairFocusTarget) && chairManReactionRoutine == null)
             {
-                Debug.Log("you interacted with the man in the chair");
+                Debug.Log("focused on man");
                 chairManReactionRoutine = StartCoroutine(ChairManReactionRoutine());
             }
             else if (IsPickupTarget(lockedFocusTarget))
@@ -1684,8 +1685,23 @@ public sealed class EyeGazeController : MonoBehaviour
         EnsureFocusTargetCollider(mouthwashTarget);
         EnsureFocusTargetCollider(toothbrushTarget);
         EnsureFocusTargetCollider(mirrorTarget);
+        ExpandChairFocusCollider(chairManTarget);
+        ExpandChairFocusCollider(chairFocusTarget);
         focusRayRenderers = FindObjectsByType<Renderer>();
         Physics.SyncTransforms();
+    }
+
+    private void ExpandChairFocusCollider(Transform target)
+    {
+        if (target == null) return;
+        BoxCollider focusCollider = target.GetComponent<BoxCollider>();
+        if (focusCollider == null) return;
+
+        float multiplier = Mathf.Max(1f, chairFocusAreaMultiplier);
+        focusCollider.size = new Vector3(
+            Mathf.Max(0.01f, focusCollider.size.x) * multiplier,
+            Mathf.Max(0.01f, focusCollider.size.y) * multiplier,
+            Mathf.Max(0.01f, focusCollider.size.z) * multiplier);
     }
 
     private void EnsureFocusTargetCollider(Transform target)
@@ -1780,10 +1796,15 @@ public sealed class EyeGazeController : MonoBehaviour
         }
         if (float.IsPositiveInfinity(targetDistance)) return false;
 
-        // Blocked only by something visibly solid in front: see-through parts of planes and their colliders don't count.
+        // Treat the man and his chair as one focus group so either visible surface can help acquire focus.
         CenterRayHit centerHit = FindRayHit(ray, eyeCamera);
+        bool hitChairInteractionGroup =
+            (target == chairManTarget || target == chairFocusTarget) &&
+            (RendererBelongsToTarget(centerHit.Renderer, chairManTarget) ||
+             RendererBelongsToTarget(centerHit.Renderer, chairFocusTarget));
+        // Blocked only by something visibly solid in front: see-through parts of planes and their colliders don't count.
         return centerHit.Renderer == null || RendererBelongsToTarget(centerHit.Renderer, target) ||
-            centerHit.Distance >= targetDistance;
+            hitChairInteractionGroup || centerHit.Distance >= targetDistance;
     }
 
     private void UpdateEyeFocusFeedback()

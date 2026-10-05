@@ -10709,6 +10709,7 @@ MonoBehaviour:
   mirrorTarget: {fileID: 0}
   chairManTarget: {fileID: 1741103399}
   chairFocusTarget: {fileID: 1416492475}
+  chairFocusAreaMultiplier: 2.5
   chairManRenderer: {fileID: 1741103397}
   chairManDisgustedSprite: {fileID: 0}
   chairManWhisperSound: {fileID: 0}
