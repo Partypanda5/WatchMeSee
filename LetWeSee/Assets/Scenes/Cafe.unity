@@ -10701,24 +10701,23 @@ MonoBehaviour:
   rightCamera: {fileID: 1337670169}
   focusTarget: {fileID: 208639089}
   focusTargets:
-  - {fileID: 1741103399}
-  - {fileID: 1416492475}
+  - {fileID: 1453031341}
   deodorantTarget: {fileID: 0}
   mouthwashTarget: {fileID: 0}
   toothbrushTarget: {fileID: 0}
   mirrorTarget: {fileID: 0}
-  chairManTarget: {fileID: 1741103399}
-  chairFocusTarget: {fileID: 1416492475}
-  chairFocusAreaMultiplier: 2.5
-  chairManRenderer: {fileID: 1741103397}
-  chairManDisgustedSprite: {fileID: 0}
-  chairManWhisperSound: {fileID: 0}
-  chairManDisgustSound: {fileID: 0}
+  npc2Target: {fileID: 1453031341}
+  npc2FocusAreaMultiplier: 2.5
+  npc2Renderer: {fileID: 1453031339}
+  npc2DisgustedSprite: {fileID: 0}
+  npc2WhisperSound: {fileID: 8300000, guid: 860e61a85548a964da2ddaf7b2510bd3, type: 3}
+  npc2DisgustSound: {fileID: 8300000, guid: bbcfbafb6c8da08458534a8a76b3494c, type: 3}
   rightEyeView: {fileID: 2026589519}
   grabSound: {fileID: 8300000, guid: 5a735a5ce0826164cb5e463045238610, type: 3}
   dialogueBoxSprite: {fileID: 21300000, guid: 8fa0c69f6b808c94b94d6d1f6d9cab66, type: 3}
   dialogueFont: {fileID: 12800000, guid: 4ef78eeb3836dbb4abca781feb311ecd, type: 3}
   dateDialogueTarget: {fileID: 1326907372}
+  glassesTarget: {fileID: 1157583544}
   dragEyesPrompt: {fileID: 0}
   dragEyesPromptDelay: 5
   mirrorFaceWidthRatio: 0.82
@@ -15947,7 +15946,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!64 &1157583541
 MeshCollider:
   m_ObjectHideFlags: 0
@@ -18901,7 +18900,7 @@ GameObject:
   - component: {fileID: 1453031339}
   - component: {fileID: 1453031338}
   m_Layer: 0
-  m_Name: Chair
+  m_Name: NPC2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
