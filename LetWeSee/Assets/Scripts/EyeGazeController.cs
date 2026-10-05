@@ -56,6 +56,30 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Font dialogueFont;
     [SerializeField] private Transform dateDialogueTarget;
     [SerializeField] private Transform glassesTarget;
+
+    [Header("Glasses monologue (cafe ending)")]
+    [Tooltip("What the normal man says once the glasses are on, one box per line. His eyes drift from the right towards the player and look straight at them for the last 3 lines.")]
+    [TextArea(2, 4)]
+    [SerializeField] private string[] normalManMonologue =
+    {
+        "Oh.",
+        "Oh, that's... so much better.",
+        "Everything has edges again.",
+        "The menu has actual words on it.",
+        "I spent the whole morning wrestling my own eyeballs.",
+        "Deodorant. Mouthwash. A toothbrush. A whole war just to leave the house.",
+        "And all this time the answer was a spare pair of glasses in her bag.",
+        "Funny how you stop noticing what you can't see.",
+        "You get used to the blur. You start calling it normal.",
+        "But I can see you now.",
+        "Really see you.",
+        "...How long have you been watching me?"
+    };
+    [Tooltip("What the date says after the monologue. Clicking it fades to the menu.")]
+    [SerializeField] private string dateFinalLine = "I think I will have the lasagna";
+    [Tooltip("Pause after the monologue before the date says her line, in seconds.")]
+    [SerializeField, Range(0f, 10f)] private float dateFinalLineDelay = 4f;
+    [SerializeField] private string menuSceneName = "Menu";
     [Tooltip("Shown if the player hasn't dragged an eye a few seconds after the first dialogue. Hidden as soon as they do.")]
     [SerializeField] private GameObject dragEyesPrompt;
     [SerializeField, Range(0f, 30f)] private float dragEyesPromptDelay = 5f;
@@ -158,6 +182,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool cafeCoffeeCompleted;
     private bool cafeNPC2Completed;
     private bool cafeOrderDialogueStarted;
+    private bool normalManMonologueActive;
     private bool cafeGlassesRevealed;
     private Coroutine glassesHoverRoutine;
     private Coroutine dialogueTextAnimation;
@@ -256,6 +281,7 @@ public sealed class EyeGazeController : MonoBehaviour
         {
             characterEyes.SetAims(leftAim, rightAim);
             characterEyes.DragStarted += OnCharacterDragStarted;
+            characterEyes.GlassesPutOn += OnGlassesPutOn;
         }
 
         if (deodorantTarget == null && GameObject.Find("DeodorantTarget") != null)
@@ -409,6 +435,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (characterEyes != null) characterEyes.GlassesPutOn -= OnGlassesPutOn;
         if (characterEyes != null) characterEyes.DragStarted -= OnCharacterDragStarted;
         for (int i = 0; i < fisheyeImages.Count; i++)
         {
@@ -624,6 +651,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void LateUpdate()
     {
+        UpdateNormalManGaze();
         UpdateStartFocus();
         // The player's mouth moves while one of their own dialogue lines is typing out.
         if (characterEyes != null)
@@ -969,6 +997,22 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
         }
 
+        if (cafeDialoguePhase == 5)
+        {
+            normalManMonologueActive = false;
+            if (characterEyes != null) characterEyes.SetNormalManGaze(1f);
+            cafeDialoguePhase = 6;
+            StartCoroutine(BeginDateFinalLineAfterPause());
+            return;
+        }
+
+        if (cafeDialoguePhase == 6)
+        {
+            cafeDialogueSequence = false;
+            StartCoroutine(FadeToScene(menuSceneName));
+            return;
+        }
+
         if (cafeDialoguePhase == 4)
         {
             cafeDialogueSequence = false;
@@ -986,6 +1030,37 @@ public sealed class EyeGazeController : MonoBehaviour
         cafeDialogueSequence = false;
         cafeInitialDialogueComplete = true;
         if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
+    }
+
+    // Glasses on: the normal man's monologue starts, then the date's final line, then the menu.
+    private void OnGlassesPutOn()
+    {
+        if (normalManMonologue == null || normalManMonologue.Length == 0)
+        {
+            cafeDialogueSequence = true;
+            cafeDialoguePhase = 6;
+            BeginDialogue(new[] { dateFinalLine }, true);
+            return;
+        }
+        normalManMonologueActive = true;
+        cafeDialogueSequence = true;
+        cafeDialoguePhase = 5;
+        BeginDialogue(normalManMonologue);
+    }
+
+    // His eyes work in from the right line by line, and are on the player for the last 3 lines.
+    private void UpdateNormalManGaze()
+    {
+        if (!normalManMonologueActive || characterEyes == null || !introDialogueActive) return;
+        int lines = normalManMonologue.Length;
+        float lookAtPlayer = lines <= 3 ? 1f : Mathf.Clamp01(introDialogueIndex / (float)(lines - 3));
+        characterEyes.SetNormalManGaze(lookAtPlayer);
+    }
+
+    private IEnumerator BeginDateFinalLineAfterPause()
+    {
+        yield return new WaitForSecondsRealtime(dateFinalLineDelay);
+        BeginDialogue(new[] { dateFinalLine }, true);
     }
 
     private bool CanInteractWithDate()
@@ -1032,6 +1107,11 @@ public sealed class EyeGazeController : MonoBehaviour
     }
     private IEnumerator FadeToCafe()
     {
+        return FadeToScene("Cafe");
+    }
+
+    private IEnumerator FadeToScene(string sceneName)
+    {
         sceneTransitioning = true;
         Cursor.visible = false;
         Cursor.lockState = CursorLockMode.None;
@@ -1041,7 +1121,7 @@ public sealed class EyeGazeController : MonoBehaviour
         if (fadeCanvas == null)
         {
             Debug.LogError("Could not find a Canvas for the scene transition fade.");
-            SceneManager.LoadScene("Cafe");
+            SceneManager.LoadScene(sceneName);
             yield break;
         }
 
@@ -1069,7 +1149,7 @@ public sealed class EyeGazeController : MonoBehaviour
         }
 
         fadeImage.color = Color.black;
-        SceneManager.LoadScene("Cafe");
+        SceneManager.LoadScene(sceneName);
     }
     private void Update()
     {
@@ -1238,14 +1318,25 @@ public sealed class EyeGazeController : MonoBehaviour
             ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
         }
 
+        // While the normal man talks (and through the date's last line), both eyes are cut straight to the date and held there.
+        bool eyesOnDate = (normalManMonologueActive || cafeDialoguePhase == 6) && dateDialogueTarget != null;
+        if (eyesOnDate)
+        {
+            Vector3 date = GetVisibleTargetCenter(dateDialogueTarget);
+            wantedLeftRotation = Quaternion.LookRotation(date - wantedLeftCamera, Vector3.up);
+            wantedRightRotation = Quaternion.LookRotation(date - wantedRightCamera, Vector3.up);
+        }
+
         leftCamera.transform.position = Vector3.Lerp(
             leftCamera.transform.position, wantedLeftCamera, Time.deltaTime * followSpeed);
         rightCamera.transform.position = Vector3.Lerp(
             rightCamera.transform.position, wantedRightCamera, Time.deltaTime * followSpeed);
-        leftCamera.transform.rotation = Quaternion.Slerp(
-            leftCamera.transform.rotation, wantedLeftRotation, Time.deltaTime * followSpeed);
-        rightCamera.transform.rotation = Quaternion.Slerp(
-            rightCamera.transform.rotation, wantedRightRotation, Time.deltaTime * followSpeed);
+        leftCamera.transform.rotation = eyesOnDate
+            ? wantedLeftRotation
+            : Quaternion.Slerp(leftCamera.transform.rotation, wantedLeftRotation, Time.deltaTime * followSpeed);
+        rightCamera.transform.rotation = eyesOnDate
+            ? wantedRightRotation
+            : Quaternion.Slerp(rightCamera.transform.rotation, wantedRightRotation, Time.deltaTime * followSpeed);
         UpdateFocusBlur();
 
         if (rightEyeView != null)

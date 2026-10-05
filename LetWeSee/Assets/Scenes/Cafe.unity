@@ -11061,6 +11061,23 @@ MonoBehaviour:
   dialogueFont: {fileID: 12800000, guid: 4ef78eeb3836dbb4abca781feb311ecd, type: 3}
   dateDialogueTarget: {fileID: 1326907372}
   glassesTarget: {fileID: 1157583544}
+  normalManMonologue:
+  - ... I ...
+  - ... I wasnt fiddling with my contacts?
+  - I had lost byself but now I see.
+  - Controlled by my blindness
+  - A loss of control
+  - controlled by a being of the either
+  - Being blind
+  - But being Seen
+  - Watched.
+  - Like some ... People - watcher.
+  - Plaing with my soul
+  - ...
+  - Playing this game
+  dateFinalLine: I think I will have the lasagna
+  dateFinalLineDelay: 2
+  menuSceneName: Menu
   dragEyesPrompt: {fileID: 0}
   dragEyesPromptDelay: 5
   mirrorFaceWidthRatio: 0.82
@@ -25897,6 +25914,7 @@ GameObject:
   - component: {fileID: 1900000003}
   - component: {fileID: 1900000002}
   - component: {fileID: 1900000004}
+  - component: {fileID: 1900000005}
   m_Layer: 0
   m_Name: FaceCamera
   m_TagString: Untagged
@@ -26014,6 +26032,103 @@ MonoBehaviour:
     m_VarianceClampScale: 0.9
     m_ContrastAdaptiveSharpening: 0
   m_Version: 2
+--- !u!82 &1900000005
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1900000001}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 8300000, guid: ff9adcc242f875f469d38ba59ab7fb53, type: 3}
+  m_PlayOnAwake: 1
+  m_Volume: 1
+  m_Pitch: 1
+  Loop: 1
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1001 &1900000010
 PrefabInstance:
   m_ObjectHideFlags: 0

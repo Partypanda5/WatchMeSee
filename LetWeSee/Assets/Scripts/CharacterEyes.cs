@@ -115,6 +115,20 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite toothbrushIdleHand;
     [SerializeField] private Sprite toothbrushHoldHand;
     [SerializeField] private Sprite holdingGlassesHand;
+    [Header("Glasses and the normal man")]
+    [Tooltip("Normalized centre of the glasses within the holding-glasses hand sprite (lines up with the mouse).")]
+    [SerializeField] private Vector2 glassesTipNormalized = new Vector2(0f, 0.25f);
+    [Tooltip("Glasses closer to the eyes than this (world units) can be put on with a click.")]
+    [SerializeField, Range(0.05f, 5f)] private float glassesOverEyesDistance = 0.8f;
+    [Tooltip("Shown instead of the face once the glasses are on (hidden until then).")]
+    [SerializeField] private GameObject normalManRoot;
+    [SerializeField] private SpriteRenderer normalManFace;
+    [SerializeField] private Sprite normalManBlinkSprite;
+    [SerializeField] private Transform normalManPupils;
+    [Tooltip("How far right the normal man's pupils sit when looking away, in local units.")]
+    [SerializeField, Range(0f, 2f)] private float normalManLookAwayOffset = 0.35f;
+    [Tooltip("How quickly the pupils drift towards their next position.")]
+    [SerializeField, Range(0.05f, 5f)] private float normalManGazeSpeed = 0.5f;
     [SerializeField] private SpriteRenderer mouthVisual;
     [Tooltip("Swapped with the normal mouth sprite while the player is talking.")]
     [SerializeField] private Sprite talkingMouthSprite;
@@ -157,7 +171,12 @@ public sealed class CharacterEyes : MonoBehaviour
     private bool mouthwashUseActive;
     private bool toothbrushUseActive;
     private bool coffeeUseActive;
-    private bool glassesHeld;
+    private bool glassesUseActive;
+    private bool normalManActive;
+    private float normalManGaze;
+    private float normalManGazeTarget;
+    private Vector3 normalManPupilsRest;
+    private Sprite normalManFaceSprite;
     private bool introDialogueLocked;
     private Coroutine introHandPopRoutine;
     private Sprite dialogueReturnHandSprite;
@@ -196,6 +215,8 @@ public sealed class CharacterEyes : MonoBehaviour
 
     // Fired when the player grabs an eye, before the drag starts moving it.
     public event System.Action DragStarted;
+    // Fired once the player puts the glasses on and the face has become the normal man.
+    public event System.Action GlassesPutOn;
 
     // -1..1 aim of each pupil within its reachable range: where the pupil is now...
     public Vector2 LeftAim => Aim(leftEye, leftEye.pupilCurrent);
@@ -205,34 +226,90 @@ public sealed class CharacterEyes : MonoBehaviour
     public Vector2 RightAimTarget => Aim(rightEye, rightEye.pupilTarget);
     public Sprite PointingHandSprite => pointingHand;
 
+    // The glasses follow the mouse in the hand. Clicking with them over the eyes puts them on.
     public void HoldGlasses()
     {
-        if (hand == null || holdingGlassesHand == null) return;
-        glassesHeld = true;
+        if (mirrorCopyMode || hand == null || holdingGlassesHand == null || glassesUseActive || normalManActive) return;
+        glassesUseActive = true;
+        dragged = null;
+        faceTapPending = false;
+        if (eyeDragAudioSource != null) eyeDragAudioSource.Stop();
+        StartCoroutine(GlassesUseSequence());
+    }
+
+    // 0 = the normal man looks off to the right, 1 = straight at the player. The pupils drift there slowly.
+    public void SetNormalManGaze(float lookAtPlayer)
+    {
+        normalManGazeTarget = Mathf.Clamp01(lookAtPlayer);
+    }
+
+    private IEnumerator GlassesUseSequence()
+    {
         hand.sprite = holdingGlassesHand;
         hand.enabled = true;
 
-        Bounds eyeBounds = leftEye.eyeBall.bounds;
-        eyeBounds.Encapsulate(rightEye.eyeBall.bounds);
-        float faceHeight = GetFaceBounds().size.y;
-        float parentScale = hand.transform.parent != null ? Mathf.Abs(hand.transform.parent.lossyScale.y) : 1f;
-        hand.transform.localScale = Vector3.one *
-            (faceHeight * 0.9f / Mathf.Max(0.01f, holdingGlassesHand.bounds.size.y * parentScale));
-        hand.transform.localRotation = Quaternion.identity;
+        while (true)
+        {
+            hand.sprite = holdingGlassesHand;
+            hand.enabled = true;
+            MoveInteractionHandTipWithPointer(glassesTipNormalized);
+            Vector3 glassesCentre = hand.transform.position + GetUseHandTipOffset(glassesTipNormalized);
+            Vector3 eyesCentre = (leftEye.eyeBall.bounds.center + rightEye.eyeBall.bounds.center) * 0.5f;
+            float distance = Vector2.Distance(glassesCentre, eyesCentre);
 
-        Bounds spriteBounds = holdingGlassesHand.bounds;
-        Vector3 glassesCenterInSprite = new Vector3(
-            spriteBounds.min.x + spriteBounds.size.x * 0.5f,
-            spriteBounds.min.y + spriteBounds.size.y * 0.75f,
-            0f);
-        Vector3 eyeCenter = new Vector3(eyeBounds.center.x, eyeBounds.center.y, hand.transform.position.z);
-        hand.transform.position = eyeCenter - hand.transform.TransformVector(glassesCenterInSprite);
+            if (eyeDrag.WasPressedThisFrame() && distance <= glassesOverEyesDistance)
+                break;
+            yield return null;
+        }
+
+        PutOnGlasses();
+    }
+
+    private void PutOnGlasses()
+    {
+        glassesUseActive = false;
+        normalManActive = true;
+
+        // Everything else on the face goes, including the hand, so there's nothing left to poke or drag.
+        foreach (Transform child in transform)
+            if (normalManRoot == null || child != normalManRoot.transform)
+                child.gameObject.SetActive(false);
+        if (normalManRoot != null) normalManRoot.SetActive(true);
+        if (normalManFace != null) normalManFaceSprite = normalManFace.sprite;
+        if (normalManPupils != null) normalManPupilsRest = normalManPupils.localPosition;
+        normalManGaze = normalManGazeTarget = 0f;
+        UpdateNormalMan();
+        GlassesPutOn?.Invoke();
+    }
+
+    // Pupils drift from looking right towards the player, and the normal man blinks now and then.
+    private void UpdateNormalMan()
+    {
+        normalManGaze = Mathf.MoveTowards(normalManGaze, normalManGazeTarget, Time.deltaTime * normalManGazeSpeed);
+        if (normalManPupils != null)
+            normalManPupils.localPosition = normalManPupilsRest + Vector3.right * (normalManLookAwayOffset * (1f - normalManGaze));
+
+        if (nextBlinkTime < 0f) ScheduleNextBlink();
+        if (blinkStartTime < 0f && Time.time >= nextBlinkTime) blinkStartTime = Time.time;
+        bool blinkingNow = blinkStartTime >= 0f && Time.time - blinkStartTime < 0.15f;
+        if (blinkStartTime >= 0f && !blinkingNow)
+        {
+            blinkStartTime = -1f;
+            ScheduleNextBlink();
+        }
+        if (normalManFace != null && normalManBlinkSprite != null && normalManFaceSprite != null)
+            normalManFace.sprite = blinkingNow ? normalManBlinkSprite : normalManFaceSprite;
+        if (normalManPupils != null && normalManPupils.gameObject.activeSelf == blinkingNow)
+            normalManPupils.gameObject.SetActive(!blinkingNow);
     }
     public bool IsUsingDeodorant => deodorantUseActive;
     public bool IsUsingMouthwash => mouthwashUseActive;
     public bool IsUsingToothbrush => toothbrushUseActive;
     public bool IsUsingCoffee => coffeeUseActive;
-    public Vector3 MouthWorldPosition => mouthVisual != null ? mouthVisual.bounds.center : transform.position;
+    // Once the normal man is showing, the old mouth is hidden, so use where his mouth is drawn on his face sprite.
+    public Vector3 MouthWorldPosition => normalManActive && normalManFace != null
+        ? normalManFace.bounds.center + new Vector3(normalManFace.bounds.size.x * 0.118f, -normalManFace.bounds.size.y * 0.083f, 0f)
+        : mouthVisual != null ? mouthVisual.bounds.center : transform.position;
 
     // Called after the deodorant pickup animation completes. The player can spray by holding LMB.
     public void BeginDeodorantUse()
@@ -582,8 +659,13 @@ public sealed class CharacterEyes : MonoBehaviour
     private void Update()
     {
         if (mirrorCopyMode) return;
+        if (normalManActive)
+        {
+            UpdateNormalMan();
+            return;
+        }
 
-        if (!introDialogueLocked && !deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && !coffeeUseActive && pointerPosition != null && eyeDrag != null)
+        if (!introDialogueLocked && !glassesUseActive && !deodorantUseActive && !mouthwashUseActive && !toothbrushUseActive && !coffeeUseActive && pointerPosition != null && eyeDrag != null)
             HandleInput();
 
         UpdateDragSquishAudio();
@@ -874,12 +956,6 @@ public sealed class CharacterEyes : MonoBehaviour
     {
         if (hand == null) return;
 
-        if (glassesHeld)
-        {
-            hand.enabled = true;
-            return;
-        }
-
         // During an eye drag, keep the fingertip on the selected pupil even if the pointer leaves the face panel.
         bool draggingEye = eyeDrag.IsPressed() && dragged != null;
         bool visible = draggingEye || cam.pixelRect.Contains(screen);
@@ -889,9 +965,7 @@ public sealed class CharacterEyes : MonoBehaviour
         Vector3 tip = draggingEye
             ? ToWorld(dragged, dragged.pupilCurrent, world.z)
             : world;
-        Sprite wanted = glassesHeld && holdingGlassesHand != null
-            ? holdingGlassesHand
-            : eyeDrag.IsPressed() ? pressingHand : pointingHand;
+        Sprite wanted = eyeDrag.IsPressed() ? pressingHand : pointingHand;
         if (wanted != null) hand.sprite = wanted;
         hand.transform.position = new Vector3(tip.x, tip.y, hand.transform.position.z);
         hand.transform.localScale = Vector3.one * 0.88f;
