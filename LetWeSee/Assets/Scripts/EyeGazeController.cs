@@ -27,6 +27,8 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Camera leftCamera;
     [SerializeField] private Camera rightCamera;
     [SerializeField] private Transform focusTarget;
+    [Tooltip("Extra objects the eyes can lock onto outside the bathroom sequence.")]
+    [SerializeField] private Transform[] focusTargets = new Transform[0];
     [SerializeField] private Transform deodorantTarget;
     [SerializeField] private Transform mouthwashTarget;
     [SerializeField] private Transform toothbrushTarget;
@@ -978,7 +980,7 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         distance = 0f;
         if (!renderer.bounds.IntersectRay(ray, out float boxDistance)) return false;
-        if (!TryGetRayShape(renderer, out Vector3[] vertices, out int[] triangles))
+        if (!TryGetRayShape(renderer, out Vector3[] vertices, out int[] triangles, out Vector2[] uvs))
         {
             distance = boxDistance;
             return true;
@@ -994,22 +996,63 @@ public sealed class EyeGazeController : MonoBehaviour
             if (sprite.flipY) { origin.y = -origin.y; direction.y = -direction.y; }
         }
 
+        Texture2D alphaTexture = GetReadableAlphaTexture(renderer, out Vector2 uvScale, out Vector2 uvOffset);
+        if (uvs == null || uvs.Length != vertices.Length) alphaTexture = null;
+
         float nearest = float.PositiveInfinity;
         for (int i = 0; i + 2 < triangles.Length; i += 3)
         {
-            if (RayHitsTriangle(origin, direction, vertices[triangles[i]], vertices[triangles[i + 1]],
-                    vertices[triangles[i + 2]], out float hit) && hit < nearest)
-                nearest = hit;
+            int a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+            if (!RayHitsTriangle(origin, direction, vertices[a], vertices[b], vertices[c],
+                    out float hit, out float u, out float v) || hit >= nearest)
+                continue;
+
+            // See-through pixels don't stop the ray.
+            if (alphaTexture != null)
+            {
+                Vector2 uv = uvs[a] * (1f - u - v) + uvs[b] * u + uvs[c] * v;
+                uv = Vector2.Scale(uv, uvScale) + uvOffset;
+                if (alphaTexture.GetPixelBilinear(uv.x, uv.y).a < RayAlphaCutoff) continue;
+            }
+            nearest = hit;
         }
         if (float.IsPositiveInfinity(nearest)) return false;
         distance = nearest;
         return true;
     }
 
-    private bool TryGetRayShape(Renderer renderer, out Vector3[] vertices, out int[] triangles)
+    private const float RayAlphaCutoff = 0.1f;
+    private MaterialPropertyBlock rayBlock;
+
+    // The texture a ray should alpha-test against, if Unity can read its pixels (Read/Write enabled).
+    private Texture2D GetReadableAlphaTexture(Renderer renderer, out Vector2 uvScale, out Vector2 uvOffset)
+    {
+        uvScale = Vector2.one;
+        uvOffset = Vector2.zero;
+        Texture texture = null;
+        if (renderer is SpriteRenderer sprite)
+        {
+            if (sprite.sprite != null) texture = sprite.sprite.texture;
+        }
+        else if (renderer.sharedMaterials.Length == 1 && renderer.sharedMaterial != null)
+        {
+            Material material = renderer.sharedMaterial;
+            if (!material.HasProperty("_MainTex")) return null;
+            if (rayBlock == null) rayBlock = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(rayBlock);
+            texture = rayBlock.GetTexture("_MainTex");
+            if (texture == null) texture = material.mainTexture;
+            uvScale = material.mainTextureScale;
+            uvOffset = material.mainTextureOffset;
+        }
+        return texture is Texture2D readable && readable.isReadable ? readable : null;
+    }
+
+    private bool TryGetRayShape(Renderer renderer, out Vector3[] vertices, out int[] triangles, out Vector2[] uvs)
     {
         vertices = null;
         triangles = null;
+        uvs = null;
         Object key = null;
         if (renderer is SpriteRenderer sprite)
         {
@@ -1035,17 +1078,20 @@ public sealed class EyeGazeController : MonoBehaviour
                 ushort[] indices = spriteAsset.triangles;
                 shape.Triangles = new int[indices.Length];
                 for (int i = 0; i < indices.Length; i++) shape.Triangles[i] = indices[i];
+                shape.Uvs = spriteAsset.uv;
             }
             else
             {
                 Mesh mesh = (Mesh)key;
                 shape.Vertices = mesh.vertices;
                 shape.Triangles = mesh.triangles;
+                shape.Uvs = mesh.uv;
             }
             rayShapes[key] = shape;
         }
         vertices = shape.Vertices;
         triangles = shape.Triangles;
+        uvs = shape.Uvs;
         return true;
     }
 
@@ -1053,14 +1099,18 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         public Vector3[] Vertices;
         public int[] Triangles;
+        public Vector2[] Uvs;
     }
 
     private readonly Dictionary<Object, RayShape> rayShapes = new Dictionary<Object, RayShape>();
 
     // Möller–Trumbore, hitting either side of the triangle.
-    private static bool RayHitsTriangle(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c, out float distance)
+    private static bool RayHitsTriangle(Vector3 origin, Vector3 direction, Vector3 a, Vector3 b, Vector3 c,
+        out float distance, out float u, out float v)
     {
         distance = 0f;
+        u = 0f;
+        v = 0f;
         Vector3 edge1 = b - a;
         Vector3 edge2 = c - a;
         Vector3 p = Vector3.Cross(direction, edge2);
@@ -1068,10 +1118,10 @@ public sealed class EyeGazeController : MonoBehaviour
         if (Mathf.Abs(determinant) < 1e-8f) return false;
         float inverse = 1f / determinant;
         Vector3 s = origin - a;
-        float u = Vector3.Dot(s, p) * inverse;
+        u = Vector3.Dot(s, p) * inverse;
         if (u < 0f || u > 1f) return false;
         Vector3 q = Vector3.Cross(s, edge1);
-        float v = Vector3.Dot(direction, q) * inverse;
+        v = Vector3.Dot(direction, q) * inverse;
         if (v < 0f || u + v > 1f) return false;
         distance = Vector3.Dot(edge2, q) * inverse;
         return distance > 0f;
@@ -1317,7 +1367,9 @@ public sealed class EyeGazeController : MonoBehaviour
     {
         get
         {
-            if (!sequenceEnabled) return focusTarget;
+            if (!sequenceEnabled)
+                return lockedFocusTarget != null ? lockedFocusTarget
+                    : alignedFocusTarget != null ? alignedFocusTarget : focusTarget;
             if (lockedFocusTarget != null) return lockedFocusTarget;
             if (alignedFocusTarget != null) return alignedFocusTarget;
             return AreAllItemsCollected() ? mirrorTarget : null;
@@ -1327,8 +1379,12 @@ public sealed class EyeGazeController : MonoBehaviour
     private Transform FindAlignedFocusTarget()
     {
         if (!sequenceEnabled)
-            return focusTarget != null && CenterRayHitsTarget(leftCamera, focusTarget) &&
-                CenterRayHitsTarget(rightCamera, focusTarget) ? focusTarget : null;
+        {
+            if (IsAligned(focusTarget)) return focusTarget;
+            foreach (Transform target in focusTargets)
+                if (IsAligned(target)) return target;
+            return null;
+        }
 
         if (AreAllItemsCollected())
             return mirrorTarget != null && CenterRayHitsTarget(leftCamera, mirrorTarget) &&
@@ -1339,6 +1395,12 @@ public sealed class EyeGazeController : MonoBehaviour
         if (IsAvailableAndAligned(toothbrushTarget)) return toothbrushTarget;
 
         return null;
+    }
+
+    private bool IsAligned(Transform target)
+    {
+        return target != null && target.gameObject.activeInHierarchy &&
+            CenterRayHitsTarget(leftCamera, target) && CenterRayHitsTarget(rightCamera, target);
     }
 
     private bool IsAvailableAndAligned(Transform target)
@@ -1392,6 +1454,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private void CacheFocusRayRenderers()
     {
         EnsureFocusTargetCollider(focusTarget);
+        foreach (Transform target in focusTargets) EnsureFocusTargetCollider(target);
         EnsureFocusTargetCollider(deodorantTarget);
         EnsureFocusTargetCollider(mouthwashTarget);
         EnsureFocusTargetCollider(toothbrushTarget);
@@ -1403,11 +1466,14 @@ public sealed class EyeGazeController : MonoBehaviour
     private void EnsureFocusTargetCollider(Transform target)
     {
         if (target == null) return;
-        SpriteRenderer[] renderers = target.GetComponentsInChildren<SpriteRenderer>();
-        if (renderers.Length == 0) return;
+        // Sprites or meshes; skip sprite masks, which have no visible area of their own.
+        List<Renderer> renderers = new List<Renderer>();
+        foreach (Renderer r in target.GetComponentsInChildren<Renderer>())
+            if (!(r is SpriteMask)) renderers.Add(r);
+        if (renderers.Count == 0) return;
 
         Bounds worldBounds = renderers[0].bounds;
-        for (int i = 1; i < renderers.Length; i++)
+        for (int i = 1; i < renderers.Count; i++)
             worldBounds.Encapsulate(renderers[i].bounds);
 
         Bounds localBounds = new Bounds(target.InverseTransformPoint(worldBounds.center), Vector3.zero);
@@ -1481,17 +1547,18 @@ public sealed class EyeGazeController : MonoBehaviour
         RaycastHit[] hits = Physics.SphereCastAll(
             ray, focusSphereCastRadius, eyeCamera.farClipPlane, eyeCamera.cullingMask, QueryTriggerInteraction.Collide);
 
-        float nearestDistance = float.PositiveInfinity;
-        Collider nearestCollider = null;
+        float targetDistance = float.PositiveInfinity;
         foreach (RaycastHit hit in hits)
         {
-            if (hit.distance >= nearestDistance) continue;
-            nearestDistance = hit.distance;
-            nearestCollider = hit.collider;
+            if (hit.collider.transform == target || hit.collider.transform.IsChildOf(target))
+                targetDistance = Mathf.Min(targetDistance, hit.distance);
         }
+        if (float.IsPositiveInfinity(targetDistance)) return false;
 
-        return nearestCollider != null &&
-            (nearestCollider.transform == target || nearestCollider.transform.IsChildOf(target));
+        // Blocked only by something visibly solid in front: see-through parts of planes and their colliders don't count.
+        CenterRayHit centerHit = FindRayHit(ray, eyeCamera);
+        return centerHit.Renderer == null || RendererBelongsToTarget(centerHit.Renderer, target) ||
+            centerHit.Distance >= targetDistance;
     }
 
     private void UpdateEyeFocusFeedback()
