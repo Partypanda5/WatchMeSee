@@ -930,7 +930,7 @@ MonoBehaviour:
   cameraAimRotationDegrees: 28
   fisheyeStrength: 0.45
   maximumMisalignmentBlur: 1
-  maximumBlurRadiusPixels: 12
+  maximumBlurRadiusPixels: 17.3
   maximumCameraSeparationForBlurDegrees: 20
   focusRayDistance: 40
   focusSphereCastRadius: 0.4
@@ -1437,7 +1437,7 @@ Transform:
   m_GameObject: {fileID: 1351620456}
   serializedVersion: 2
   m_LocalRotation: {x: 0.7071068, y: 0, z: 0, w: 0.7071068}
-  m_LocalPosition: {x: -3.98, y: -3.66, z: -5.35}
+  m_LocalPosition: {x: -4.31, y: -3.66, z: -4.58}
   m_LocalScale: {x: 6.1227293, y: 6.1227293, z: 6.1227293}
   m_ConstrainProportionsScale: 0
   m_Children:
@@ -2327,6 +2327,10 @@ PrefabInstance:
     serializedVersion: 3
     m_TransformParent: {fileID: 0}
     m_Modifications:
+    - target: {fileID: 336057792222613713, guid: 388542e2f03cd824eab4b1f980486b65, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: 11.58
+      objectReference: {fileID: 0}
     - target: {fileID: 1936680086443552459, guid: 388542e2f03cd824eab4b1f980486b65, type: 3}
       propertyPath: m_LocalPosition.x
       value: -0.13

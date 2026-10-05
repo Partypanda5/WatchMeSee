@@ -488,16 +488,13 @@ public sealed class EyeGazeController : MonoBehaviour
         }
     }
 
-    // Grabbing an eye on the sprite face exits focus, same as grabbing a UI eye.
+    // Grabbing an eye on the sprite face exits focus. The eyes stay where they were aimed.
     private void OnCharacterDragStarted()
     {
         characterEyeDragActive = true;
         if (!focused) return;
         focused = false;
         lockedFocusTarget = null;
-        leftAim = Vector2.zero;
-        rightAim = Vector2.zero;
-        characterEyes.SetAims(leftAim, rightAim);
     }
 
     private void LateUpdate()
@@ -805,28 +802,21 @@ public sealed class EyeGazeController : MonoBehaviour
                 rightPupil.anchoredPosition, rightPupilStart + wantedRightPupil, Time.deltaTime * followSpeed);
         }
 
-        Transform cameraFocusTarget = lockedFocusTarget != null ? lockedFocusTarget : alignedFocusTarget;
         Vector3 eyesCenter = (leftCameraStart + rightCameraStart) * 0.5f;
         Vector3 wantedLeftCamera = eyesCenter + Vector3.left * (eyeSeparation * 0.5f);
         Vector3 wantedRightCamera = eyesCenter + Vector3.right * (eyeSeparation * 0.5f);
 
-        Quaternion wantedLeftRotation = focused && cameraFocusTarget != null
-            ? Quaternion.LookRotation(cameraFocusTarget.position - wantedLeftCamera, Vector3.up)
-            : leftCameraStartRotation * Quaternion.Euler(
-                -leftAim.y * cameraAimRotationDegrees,
-                leftAim.x * cameraAimRotationDegrees,
-                0f);
-        Quaternion wantedRightRotation = focused && cameraFocusTarget != null
-            ? Quaternion.LookRotation(cameraFocusTarget.position - wantedRightCamera, Vector3.up)
-            : rightCameraStartRotation * Quaternion.Euler(
-                -rightAim.y * cameraAimRotationDegrees,
-                rightAim.x * cameraAimRotationDegrees,
-                0f);
+        // The cameras always follow the eyes; focusing on an item doesn't turn them towards it.
+        Quaternion wantedLeftRotation = leftCameraStartRotation * Quaternion.Euler(
+            -leftAim.y * cameraAimRotationDegrees,
+            leftAim.x * cameraAimRotationDegrees,
+            0f);
+        Quaternion wantedRightRotation = rightCameraStartRotation * Quaternion.Euler(
+            -rightAim.y * cameraAimRotationDegrees,
+            rightAim.x * cameraAimRotationDegrees,
+            0f);
 
-        if (focused && cameraFocusTarget != null)
-            gazeSnapped = false;
-        else
-            ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
+        ApplyGazeSnap(wantedLeftCamera, wantedRightCamera, ref wantedLeftRotation, ref wantedRightRotation);
 
         leftCamera.transform.position = Vector3.Lerp(
             leftCamera.transform.position, wantedLeftCamera, Time.deltaTime * followSpeed);
@@ -1423,9 +1413,10 @@ public sealed class EyeGazeController : MonoBehaviour
     private void UpdateEyeFocusFeedback()
     {
         Physics.SyncTransforms();
+        // Items only pop (and so can be locked and used) once the eyes have snapped together on them.
         Transform target = focused && lockedFocusTarget != null
             ? lockedFocusTarget
-            : FindAlignedFocusTarget();
+            : gazeSnapped ? FindAlignedFocusTarget() : null;
 
         if (target != alignedFocusTarget ||
             (snappingTarget != null && snappingTarget != target) ||
