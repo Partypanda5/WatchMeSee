@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using UnityEngine.SceneManagement;
 
 public sealed class EyeGazeController : MonoBehaviour
 {
@@ -74,6 +75,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private bool focused;
     private bool sequenceEnabled;
     private bool sequenceComplete;
+    private bool sceneTransitioning;
     private bool focusTargetCurrentlyAligned;
     private Coroutine alignmentSnapRoutine;
     private Transform snappingTarget;
@@ -723,10 +725,57 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialoguePanel = null;
         introDialogueText = null;
         if (completedPanel != null) Destroy(completedPanel.gameObject);
+        if (sequenceComplete)
+        {
+            StartCoroutine(FadeToCafe());
+            return;
+        }
         if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
+    }
+    private IEnumerator FadeToCafe()
+    {
+        sceneTransitioning = true;
+        Cursor.visible = false;
+        Cursor.lockState = CursorLockMode.None;
+
+        Canvas fadeCanvas = leftPanel != null ? leftPanel.GetComponentInParent<Canvas>() : null;
+        if (fadeCanvas == null) fadeCanvas = FindObjectOfType<Canvas>();
+        if (fadeCanvas == null)
+        {
+            Debug.LogError("Could not find a Canvas for the scene transition fade.");
+            SceneManager.LoadScene("Cafe");
+            yield break;
+        }
+
+        GameObject fadeObject = new GameObject("Scene Fade", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+        RectTransform fadeRect = fadeObject.GetComponent<RectTransform>();
+        fadeRect.SetParent(fadeCanvas.transform, false);
+        fadeRect.anchorMin = Vector2.zero;
+        fadeRect.anchorMax = Vector2.one;
+        fadeRect.offsetMin = Vector2.zero;
+        fadeRect.offsetMax = Vector2.zero;
+        fadeRect.SetAsLastSibling();
+
+        Image fadeImage = fadeObject.GetComponent<Image>();
+        fadeImage.color = new Color(0f, 0f, 0f, 0f);
+        fadeImage.raycastTarget = false;
+
+        const float fadeDuration = 1.25f;
+        float elapsed = 0f;
+        while (elapsed < fadeDuration)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float alpha = Mathf.Clamp01(elapsed / fadeDuration);
+            fadeImage.color = new Color(0f, 0f, 0f, alpha);
+            yield return null;
+        }
+
+        fadeImage.color = Color.black;
+        SceneManager.LoadScene("Cafe");
     }
     private void Update()
     {
+        if (sceneTransitioning) return;
         if (introDialogueActive)
         {
             UpdateIntroDialogue();

@@ -302,7 +302,8 @@ public static class MenuSceneBuilder
         EditorBuildSettings.scenes = new[]
         {
             new EditorBuildSettingsScene(MenuScenePath, true),
-            new EditorBuildSettingsScene("Assets/Scenes/SampleScene.unity", true)
+            new EditorBuildSettingsScene("Assets/Scenes/SampleScene.unity", true),
+            new EditorBuildSettingsScene("Assets/Scenes/Cafe.unity", true)
         };
     }
 }
