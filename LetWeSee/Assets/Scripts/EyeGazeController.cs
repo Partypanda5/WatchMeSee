@@ -108,7 +108,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private Image grabHandImage;
     private AudioSource grabAudioSource;
     private Coroutine grabRoutine;
-    private SpriteRenderer[] focusRayRenderers = new SpriteRenderer[0];
+    private Renderer[] focusRayRenderers = new Renderer[0];
     private Image leftEyeImage;
     private Image rightEyeImage;
     private Color leftEyeBaseColor;
@@ -1322,7 +1322,7 @@ public sealed class EyeGazeController : MonoBehaviour
         EnsureFocusTargetCollider(mouthwashTarget);
         EnsureFocusTargetCollider(toothbrushTarget);
         EnsureFocusTargetCollider(mirrorTarget);
-        focusRayRenderers = FindObjectsOfType<SpriteRenderer>();
+        focusRayRenderers = FindObjectsByType<Renderer>(FindObjectsSortMode.None);
         Physics.SyncTransforms();
     }
 
@@ -1357,7 +1357,7 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private struct CenterRayHit
     {
-        public SpriteRenderer Renderer;
+        public Renderer Renderer;
         public Vector3 Point;
         public float Distance;
     }
@@ -1367,16 +1367,16 @@ public sealed class EyeGazeController : MonoBehaviour
         return FindRayHit(eyeCamera.ViewportPointToRay(new Vector3(0.5f, 0.5f, 0f)), eyeCamera);
     }
 
-    // Nearest sprite along the ray, or the point at the focus ray distance if nothing is hit.
+    // Nearest sprite or mesh along the ray, or the point at the focus ray distance if nothing is hit.
     private CenterRayHit FindRayHit(Ray ray, Camera eyeCamera)
     {
         float nearestDistance = Mathf.Max(eyeCamera.nearClipPlane, focusRayDistance);
-        SpriteRenderer nearestRenderer = null;
+        Renderer nearestRenderer = null;
 
-        foreach (SpriteRenderer candidate in focusRayRenderers)
+        foreach (Renderer candidate in focusRayRenderers)
         {
             if (candidate == null || !candidate.enabled || !candidate.gameObject.activeInHierarchy ||
-                (eyeCamera.cullingMask & (1 << candidate.gameObject.layer)) == 0)
+                candidate is SpriteMask || (eyeCamera.cullingMask & (1 << candidate.gameObject.layer)) == 0)
                 continue;
 
             if (RayHitsRenderer(ray, candidate, out float distance) &&
@@ -1395,7 +1395,7 @@ public sealed class EyeGazeController : MonoBehaviour
         };
     }
 
-    private static bool RendererBelongsToTarget(SpriteRenderer renderer, Transform target)
+    private static bool RendererBelongsToTarget(Renderer renderer, Transform target)
     {
         return renderer != null && target != null && (renderer.transform == target || renderer.transform.IsChildOf(target));
     }
@@ -1563,16 +1563,16 @@ public sealed class EyeGazeController : MonoBehaviour
         float focusRadius = focusPointRadius;
 
         bool rayHitsActiveTarget = RendererBelongsToTarget(rayHit.Renderer, target);
-        SpriteRenderer[] focusRenderers = bothRaysHitTarget
-            ? target.GetComponentsInChildren<SpriteRenderer>()
+        Renderer[] focusRenderers = bothRaysHitTarget
+            ? target.GetComponentsInChildren<Renderer>()
             : rayHit.Renderer == null || rayHitsActiveTarget
-                ? new SpriteRenderer[0]
+                ? new Renderer[0]
                 : new[] { rayHit.Renderer };
 
-        foreach (SpriteRenderer spriteRenderer in focusRenderers)
+        foreach (Renderer focusRenderer in focusRenderers)
         {
-            if (spriteRenderer == null) continue;
-            Bounds bounds = spriteRenderer.bounds;
+            if (focusRenderer == null || focusRenderer is SpriteMask) continue;
+            Bounds bounds = focusRenderer.bounds;
             for (int x = 0; x < 2; x++)
             for (int y = 0; y < 2; y++)
             for (int z = 0; z < 2; z++)

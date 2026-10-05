@@ -11,6 +11,11 @@ public sealed class TiledWall : MonoBehaviour
     [SerializeField] private Vector2Int tileCount = new Vector2Int(12, 9);
     [Tooltip("Change to get a different random layout. The same seed always gives the same wall.")]
     [SerializeField] private int seed = 1;
+    [SerializeField] private Color tint = Color.white;
+    [Tooltip("Gives every tile a slightly different shade of the tint.")]
+    [SerializeField] private bool randomizeTint;
+    [Tooltip("How much each tile's shade can differ when randomizing.")]
+    [SerializeField, Range(0f, 0.5f)] private float tintVariation = 0.08f;
 
     private Mesh mesh;
     private MaterialPropertyBlock block;
@@ -46,6 +51,8 @@ public sealed class TiledWall : MonoBehaviour
         for (int i = 0; i < tiles.Length; i++) triangles[i] = new List<int>();
 
         var random = new System.Random(seed);
+        // Separate stream so turning tint randomizing on or off doesn't reshuffle the tiles.
+        var tintRandom = new System.Random(seed + 7919);
         for (int y = 0; y < rows; y++)
         for (int x = 0; x < columns; x++)
         {
@@ -63,7 +70,8 @@ public sealed class TiledWall : MonoBehaviour
             uvs.Add(new Vector2(uv.xMin, uv.yMax));
             uvs.Add(new Vector2(uv.xMax, uv.yMax));
             uvs.Add(new Vector2(uv.xMax, uv.yMin));
-            for (int c = 0; c < 4; c++) colors.Add(Color.white);
+            Color tileColor = randomizeTint ? VaryTint(tintRandom) : tint;
+            for (int c = 0; c < 4; c++) colors.Add(tileColor);
 
             List<int> tris = triangles[tiles[pick] != null ? pick : 0];
             tris.Add(start); tris.Add(start + 1); tris.Add(start + 2);
@@ -88,6 +96,18 @@ public sealed class TiledWall : MonoBehaviour
             block.SetTexture(MainTex, tiles[i].texture);
             meshRenderer.SetPropertyBlock(block, i);
         }
+    }
+
+    // Mostly a lighter or darker shade of the tint, with a little colour drift per channel.
+    private Color VaryTint(System.Random random)
+    {
+        float Range() => (float)(random.NextDouble() * 2.0 - 1.0) * tintVariation;
+        float shade = 1f + Range();
+        return new Color(
+            Mathf.Clamp01(tint.r * (shade + Range() * 0.3f)),
+            Mathf.Clamp01(tint.g * (shade + Range() * 0.3f)),
+            Mathf.Clamp01(tint.b * (shade + Range() * 0.3f)),
+            tint.a);
     }
 
     private static Rect UvRect(Sprite sprite)
