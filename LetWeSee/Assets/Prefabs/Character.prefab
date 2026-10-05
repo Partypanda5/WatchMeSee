@@ -3134,6 +3134,8 @@ MonoBehaviour:
   deodorantIdleHand: {fileID: 21300000, guid: 70d8d93ba2d65544fb9c0480854b663d, type: 3}
   mouthwashIdleHand: {fileID: 21300000, guid: 4d1cee2204d53274091d04e47c334195, type: 3}
   mouthwashHoldHand: {fileID: 21300000, guid: 57d023a89fe05f442a807729133d147a, type: 3}
+  coffeeIdleHand: {fileID: 21300000, guid: 0694129f65abf97458ded0094d6db1ca, type: 3}
+  coffeeSipHand: {fileID: 21300000, guid: 1cbeac3695026b143835a600b5bd31aa, type: 3}
   toothbrushIdleHand: {fileID: 21300000, guid: a539b0b1297363643adc60dfac0e5b8d, type: 3}
   toothbrushHoldHand: {fileID: 21300000, guid: 7e2588926d96b33418e30b5cad5a7d67, type: 3}
   mouthVisual: {fileID: 2850158083860305927}

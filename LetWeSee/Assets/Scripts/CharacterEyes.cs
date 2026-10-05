@@ -94,6 +94,19 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private Sprite deodorantIdleHand;
     [SerializeField] private Sprite mouthwashIdleHand;
     [SerializeField] private Sprite mouthwashHoldHand;
+    [Header("Coffee")]
+    [SerializeField] private Sprite coffeeIdleHand;
+    [SerializeField] private Sprite coffeeSipHand;
+    [Tooltip("Normalized cup-rim position within the coffee hand sprite (lines up with the mouse).")]
+    [SerializeField] private Vector2 coffeeCupTipNormalized = new Vector2(-0.46f, 0.42f);
+    [SerializeField, Range(1, 10)] private int coffeeSipCount = 5;
+    [Tooltip("How long the mouse has to be held over the mouth for one sip, in seconds.")]
+    [SerializeField, Range(0.1f, 5f)] private float coffeeSipDuration = 1.2f;
+    [Tooltip("Hand shake before the first sip, in world units.")]
+    [SerializeField, Range(0f, 0.5f)] private float coffeeShakeStart = 0.01f;
+    [Tooltip("Hand shake on the last sip, in world units. It ramps up faster towards the end.")]
+    [SerializeField, Range(0f, 1f)] private float coffeeShakeEnd = 0.3f;
+    [SerializeField, Range(0.5f, 30f)] private float coffeeShakeSpeed = 9f;
     [SerializeField] private Sprite toothbrushIdleHand;
     [SerializeField] private Sprite toothbrushHoldHand;
     [SerializeField] private SpriteRenderer mouthVisual;
@@ -221,10 +234,10 @@ public sealed class CharacterEyes : MonoBehaviour
         StartCoroutine(MouthwashUseSequence(false));
     }
 
-    // Starts the same four-second mouth interaction using the mouthwash hand sprites for coffee.
+    // Coffee: a few short sips over the mouth, the hand getting shakier after each one.
     public void BeginCoffeeUse()
     {
-        if (mirrorCopyMode || hand == null || mouthwashIdleHand == null || eyeDrag == null ||
+        if (mirrorCopyMode || hand == null || (coffeeIdleHand == null && mouthwashIdleHand == null) || eyeDrag == null ||
             deodorantUseActive || mouthwashUseActive || toothbrushUseActive || coffeeUseActive)
             return;
 
@@ -237,7 +250,7 @@ public sealed class CharacterEyes : MonoBehaviour
         originalHandScale = hand.transform.localScale;
         originalHandRotation = hand.transform.localRotation;
         originalHandEnabled = hand.enabled;
-        StartCoroutine(MouthwashUseSequence(true));
+        StartCoroutine(CoffeeUseSequence());
     }
 
     // Called after the toothbrush pickup animation completes.
@@ -1066,6 +1079,70 @@ public sealed class CharacterEyes : MonoBehaviour
             mouthwashUseActive = false;
         }
     }
+    private IEnumerator CoffeeUseSequence()
+    {
+        Sprite cupHand = coffeeIdleHand != null ? coffeeIdleHand : mouthwashIdleHand;
+        Sprite sipHand = coffeeSipHand != null ? coffeeSipHand : mouthwashHoldHand != null ? mouthwashHoldHand : cupHand;
+        bool restoreMouth = mouthVisual != null && mouthVisual.enabled;
+        int sipsTaken = 0;
+        hand.sprite = cupHand;
+        MoveInteractionHandTipWithPointer(coffeeCupTipNormalized);
+
+        while (sipsTaken < coffeeSipCount)
+        {
+            float progress = coffeeSipCount > 1 ? sipsTaken / (float)(coffeeSipCount - 1) : 1f;
+            float shake = Mathf.Lerp(coffeeShakeStart, coffeeShakeEnd, progress * progress);
+            Vector2 pointer = pointerPosition.ReadValue<Vector2>();
+            if (eyeDrag.WasPressedThisFrame() && IsPointerOverMouth(pointer))
+            {
+                if (mouthVisual != null) mouthVisual.enabled = false;
+                hand.sprite = sipHand;
+                MoveInteractionHandTipWithPointer(coffeeCupTipNormalized);
+                Vector3 sipPosition = hand.transform.position;
+                SetCoffeeSipAudio(true);
+
+                float held = 0f;
+                while (eyeDrag.IsPressed() && held < coffeeSipDuration)
+                {
+                    held += Time.deltaTime;
+                    hand.transform.position = sipPosition + CoffeeShake(shake);
+                    yield return null;
+                }
+
+                // A full hold is one sip; letting go early doesn't count. Either way it's back to the cup.
+                SetCoffeeSipAudio(false);
+                if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
+                hand.sprite = cupHand;
+                if (held >= coffeeSipDuration) sipsTaken++;
+            }
+            else
+            {
+                MoveInteractionHandTipWithPointer(coffeeCupTipNormalized);
+                hand.transform.position += CoffeeShake(shake);
+            }
+            yield return null;
+        }
+
+        SetCoffeeSipAudio(false);
+        if (mouthVisual != null) mouthVisual.enabled = restoreMouth;
+        hand.sprite = pointingHand != null ? pointingHand : originalHandSprite;
+        hand.transform.localScale = originalHandScale;
+        hand.transform.localRotation = originalHandRotation;
+        hand.enabled = true;
+        coffeeUseActive = false;
+    }
+
+    // Smooth random wobble for the coffee hand.
+    private Vector3 CoffeeShake(float amount)
+    {
+        if (amount <= 0f) return Vector3.zero;
+        float time = Time.time * coffeeShakeSpeed;
+        return new Vector3(
+            (Mathf.PerlinNoise(time, 0.37f) - 0.5f) * 2f * amount,
+            (Mathf.PerlinNoise(0.71f, time) - 0.5f) * 2f * amount,
+            0f);
+    }
+
     private IEnumerator ToothbrushUseSequence()
     {
         hand.sprite = toothbrushIdleHand;
