@@ -32,6 +32,43 @@ public sealed class TiledWall : MonoBehaviour
         mesh = null;
     }
 
+    private Camera menuCamera;
+
+    private void LateUpdate()
+    {
+        // The Menu uses this prefab behind a screen-space canvas, so fit it to the camera view.
+        if (gameObject.scene.name != "Menu") return;
+        if (menuCamera == null || !menuCamera.isActiveAndEnabled)
+            menuCamera = Camera.main;
+        if (menuCamera == null) return;
+
+        if (transform.parent != null)
+            transform.SetParent(null, false);
+
+        MeshFilter filter = GetComponent<MeshFilter>();
+        Mesh activeMesh = filter != null ? filter.sharedMesh : null;
+        if (activeMesh == null) return;
+        Vector3 wallSize = activeMesh.bounds.size;
+        if (wallSize.x <= 0f || wallSize.y <= 0f) return;
+
+        float depth = menuCamera.nearClipPlane + 0.05f;
+        float viewHeight = menuCamera.orthographic
+            ? menuCamera.orthographicSize * 2f
+            : 2f * depth * Mathf.Tan(menuCamera.fieldOfView * 0.5f * Mathf.Deg2Rad);
+        float viewWidth = viewHeight * menuCamera.aspect;
+        float fitScale = Mathf.Max(viewWidth / wallSize.x, viewHeight / wallSize.y) * 1.02f;
+
+        Vector3 targetPosition = menuCamera.transform.position + menuCamera.transform.forward * depth;
+        Quaternion targetRotation = menuCamera.transform.rotation;
+        Vector3 targetScale = Vector3.one * fitScale;
+        if ((transform.position - targetPosition).sqrMagnitude > 0.000001f ||
+            Quaternion.Angle(transform.rotation, targetRotation) > 0.01f)
+            transform.SetPositionAndRotation(targetPosition, targetRotation);
+        if ((transform.localScale - targetScale).sqrMagnitude > 0.000001f)
+            transform.localScale = targetScale;
+    }
+
+
     private void Build()
     {
         if (tiles == null || tiles.Length == 0 || tiles[0] == null) return;
