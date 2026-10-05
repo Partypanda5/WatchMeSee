@@ -10718,6 +10718,8 @@ MonoBehaviour:
   dialogueBoxSprite: {fileID: 21300000, guid: 8fa0c69f6b808c94b94d6d1f6d9cab66, type: 3}
   dialogueFont: {fileID: 12800000, guid: 4ef78eeb3836dbb4abca781feb311ecd, type: 3}
   dateDialogueTarget: {fileID: 1326907372}
+  dragEyesPrompt: {fileID: 0}
+  dragEyesPromptDelay: 5
   mirrorFaceWidthRatio: 0.82
   mirrorFaceHeightRatio: 0.88
   pupilTravel: 14
@@ -24776,10 +24778,6 @@ PrefabInstance:
       propertyPath: viewCamera
       value: 
       objectReference: {fileID: 1900000002}
-    - target: {fileID: 4518846203937184211, guid: 2a850c3e884cc6441bec0ac52dfce869, type: 3}
-      propertyPath: dragSensitivity
-      value: 0.1
-      objectReference: {fileID: 0}
     - target: {fileID: 6681176480455205369, guid: 2a850c3e884cc6441bec0ac52dfce869, type: 3}
       propertyPath: m_Name
       value: Character
@@ -25515,6 +25513,20 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1958949156}
   m_Mesh: {fileID: 10209, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!114 &1960000001
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1157583540}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d1ebb594b8d348448b4df88aaad9d967, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  height: 0.12
+  speed: 0.6
 --- !u!1 &1960897382
 GameObject:
   m_ObjectHideFlags: 0
@@ -28339,20 +28351,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5308bdb095614cdaa2af0e30680637fa, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CafeSceneFadeIn
---- !u!114 &1960000001
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 1157583540}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: d1ebb594b8d348448b4df88aaad9d967, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  height: 0.12
-  speed: 0.6
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
