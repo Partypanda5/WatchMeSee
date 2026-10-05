@@ -613,15 +613,27 @@ public sealed class EyeGazeController : MonoBehaviour
 
     private void SetIntroDialogueLine(string line)
     {
-        if (dialogueTextAnimation != null)
-            StopCoroutine(dialogueTextAnimation);
+        StopIntroDialogueAnimation();
+        if (characterEyes != null)
+            characterEyes.PlayDialogueGroans();
 
         dialogueTextAnimation = StartCoroutine(AnimateIntroDialogueLine(line));
     }
 
+    private void StopIntroDialogueAnimation()
+    {
+        if (dialogueTextAnimation == null) return;
+        StopCoroutine(dialogueTextAnimation);
+        dialogueTextAnimation = null;
+    }
+
     private IEnumerator AnimateIntroDialogueLine(string line)
     {
-        if (introDialogueText == null) yield break;
+        if (introDialogueText == null || introDialoguePanel == null)
+        {
+            dialogueTextAnimation = null;
+            yield break;
+        }
 
         RectTransform textRect = introDialogueText.rectTransform;
         Vector2 restingPosition = textRect.anchoredPosition;
@@ -631,9 +643,13 @@ public sealed class EyeGazeController : MonoBehaviour
 
         foreach (string word in words)
         {
+            if (introDialogueText == null || textRect == null || introDialoguePanel == null)
+            {
+                dialogueTextAnimation = null;
+                yield break;
+            }
             if (string.IsNullOrEmpty(word)) continue;
 
-            // Reveal and pop one complete word at a time.
             completedText += word + " ";
             introDialogueText.text = completedText.TrimEnd();
             const float popDuration = 0.29f;
@@ -643,6 +659,12 @@ public sealed class EyeGazeController : MonoBehaviour
 
             while (elapsed < popDuration)
             {
+                if (introDialogueText == null || textRect == null || introDialoguePanel == null)
+                {
+                    dialogueTextAnimation = null;
+                    yield break;
+                }
+
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / popDuration);
                 float eased = 1f - Mathf.Pow(1f - t, 3f);
@@ -653,15 +675,25 @@ public sealed class EyeGazeController : MonoBehaviour
                 yield return null;
             }
 
+            if (introDialogueText == null || textRect == null || introDialoguePanel == null)
+            {
+                dialogueTextAnimation = null;
+                yield break;
+            }
+
             textRect.localScale = Vector3.one;
             textRect.anchoredPosition = restingPosition;
             yield return new WaitForSecondsRealtime(0.055f);
         }
 
-        textRect.localScale = Vector3.one;
-        textRect.anchoredPosition = restingPosition;
+        if (introDialogueText != null && textRect != null && introDialoguePanel != null)
+        {
+            textRect.localScale = Vector3.one;
+            textRect.anchoredPosition = restingPosition;
+        }
         dialogueTextAnimation = null;
     }
+
     private void UpdateIntroDialogue()
     {
         Cursor.visible = true;
@@ -674,7 +706,8 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialoguePanel.localScale = Vector3.Lerp(
             introDialoguePanel.localScale, Vector3.one * targetScale, scaleBlend);
 
-        if (!focusClick.WasPressedThisFrame() || !hovering)
+        // A line accepts one advance click after its word animation has finished.
+        if (dialogueTextAnimation != null || !focusClick.WasPressedThisFrame() || !hovering)
             return;
 
         introDialogueIndex++;
@@ -684,10 +717,12 @@ public sealed class EyeGazeController : MonoBehaviour
             return;
         }
 
+        StopIntroDialogueAnimation();
         introDialogueActive = false;
-        Destroy(introDialoguePanel.gameObject);
+        RectTransform completedPanel = introDialoguePanel;
         introDialoguePanel = null;
         introDialogueText = null;
+        if (completedPanel != null) Destroy(completedPanel.gameObject);
         if (characterEyes != null) characterEyes.PopHandUpAfterIntroDialogue();
     }
     private void Update()

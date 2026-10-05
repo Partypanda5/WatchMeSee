@@ -924,7 +924,7 @@ MonoBehaviour:
   mirrorFaceHeightRatio: 0.88
   pupilTravel: 14
   cameraTravel: 10
-  eyeSeparation: 1
+  eyeSeparation: 0.6
   gazeSnapAngle: 0.7
   gazeSnapReleaseAngle: 1
   cameraAimRotationDegrees: 28
@@ -1008,8 +1008,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 6.031468, y: 7.0176125, z: 2.7733576}
-  m_Center: {x: -0.24609447, y: 0.3571911, z: -0.88667905}
+  m_Size: {x: 6.031468, y: 7.0176125, z: 0.70592403}
+  m_Center: {x: -0.24609447, y: 0.3571911, z: 0.14703798}
 --- !u!1 &937086374
 GameObject:
   m_ObjectHideFlags: 0
@@ -1463,8 +1463,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 0.2580916, y: 0.08179384, z: 0.48952276}
-  m_Center: {x: 0.116558865, y: -0.15296371, z: -0.2273245}
+  m_Size: {x: 0.2580916, y: 0.022972733, z: 0.48952276}
+  m_Center: {x: 0.116558865, y: -0.13901865, z: -0.2273245}
 --- !u!1 &1359698921
 GameObject:
   m_ObjectHideFlags: 0
@@ -1662,8 +1662,8 @@ BoxCollider:
   m_ProvidesContacts: 0
   m_Enabled: 1
   serializedVersion: 3
-  m_Size: {x: 1.3057611, y: 2.0885837, z: 0.36204338}
-  m_Center: {x: -0.2779914, y: -1.5208615, z: -2.6851301}
+  m_Size: {x: 1.3057611, y: 2.0885837, z: 0.04730797}
+  m_Center: {x: -0.2779914, y: -1.5208615, z: -2.652577}
 --- !u!1 &1900000001
 GameObject:
   m_ObjectHideFlags: 0

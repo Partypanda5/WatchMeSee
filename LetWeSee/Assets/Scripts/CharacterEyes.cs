@@ -84,6 +84,7 @@ public sealed class CharacterEyes : MonoBehaviour
     [SerializeField] private AudioClip mouthwashSwishingSound;
     [SerializeField] private AudioClip toothBrushSound;
     [SerializeField] private AudioClip[] manMoanClips = new AudioClip[0];
+    [SerializeField] private AudioClip dialogueGroansSound;
     [SerializeField] private AudioClip faceTapSound;
     [SerializeField] private AudioClip eyeDragSquishSound;
 
@@ -96,6 +97,7 @@ public sealed class CharacterEyes : MonoBehaviour
     private AudioSource mouthwashAudioSource;
     private AudioSource toothbrushAudioSource;
     private AudioSource manMoanAudioSource;
+    private AudioSource dialogueGroansAudioSource;
     private float manMoanDelay;
     private bool deodorantWasHeld;
     private int lastManMoanClipIndex = -1;
@@ -759,6 +761,18 @@ public sealed class CharacterEyes : MonoBehaviour
         }
     }
 
+    public void PlayDialogueGroans()
+    {
+        if (dialogueGroansSound == null) return;
+        if (dialogueGroansAudioSource == null)
+        {
+            dialogueGroansAudioSource = gameObject.AddComponent<AudioSource>();
+            dialogueGroansAudioSource.playOnAwake = false;
+            dialogueGroansAudioSource.spatialBlend = 0f;
+        }
+
+        dialogueGroansAudioSource.PlayOneShot(dialogueGroansSound);
+    }
     private void UpdateManMoanAudio()
     {
         if (manMoanClips == null || manMoanClips.Length == 0 || manMoanAudioSource == null ||

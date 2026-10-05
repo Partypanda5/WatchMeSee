@@ -3050,6 +3050,7 @@ MonoBehaviour:
   - {fileID: 8300000, guid: 0e7051b9567465744a08d84777265c7a, type: 3}
   - {fileID: 8300000, guid: 500a45dc4e0819a439046040b0a98d9f, type: 3}
   - {fileID: 8300000, guid: d2434834a12038f4ba12c5bb7183ead8, type: 3}
+  dialogueGroansSound: {fileID: 8300000, guid: 5f4019db60218b44db29d5dff8d1feb9, type: 3}
   faceTapSound: {fileID: 8300000, guid: e9b776e7bce6b5f459257ff5b1c493a0, type: 3}
   eyeDragSquishSound: {fileID: 8300000, guid: e5aa8b2b43ff0c744ae1c58a19910492, type: 3}
 --- !u!1 &7462560493454548008
