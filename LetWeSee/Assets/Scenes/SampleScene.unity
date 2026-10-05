@@ -907,6 +907,7 @@ MonoBehaviour:
   armVisual: {fileID: 0}
   handVisual: {fileID: 0}
   characterEyes: {fileID: 1900000011}
+  faceCamera: {fileID: 1900000002}
   worldPanel: {fileID: 1983822857}
   leftCamera: {fileID: 519420031}
   rightCamera: {fileID: 1337670169}
@@ -917,6 +918,8 @@ MonoBehaviour:
   mirrorTarget: {fileID: 870613200}
   rightEyeView: {fileID: 2026589519}
   grabSound: {fileID: 8300000, guid: 5a735a5ce0826164cb5e463045238610, type: 3}
+  dialogueBoxSprite: {fileID: 21300000, guid: 8fa0c69f6b808c94b94d6d1f6d9cab66, type: 3}
+  dialogueFont: {fileID: 12800000, guid: 4ef78eeb3836dbb4abca781feb311ecd, type: 3}
   mirrorFaceWidthRatio: 0.82
   mirrorFaceHeightRatio: 0.88
   pupilTravel: 14
@@ -961,6 +964,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 870613200}
+  - component: {fileID: 870613201}
   m_Layer: 0
   m_Name: MirrorTarget
   m_TagString: Untagged
@@ -986,6 +990,27 @@ Transform:
   - {fileID: 566064878}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &870613201
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 870613199}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 6.031468, y: 7.0176125, z: 2.7733576}
+  m_Center: {x: -0.24609447, y: 0.3571911, z: -0.88667905}
 --- !u!1 &937086374
 GameObject:
   m_ObjectHideFlags: 0
@@ -1395,6 +1420,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1351620457}
+  - component: {fileID: 1351620458}
   m_Layer: 0
   m_Name: ToothbrushTarget
   m_TagString: Untagged
@@ -1419,6 +1445,27 @@ Transform:
   - {fileID: 51379057}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 90, y: 0, z: 0}
+--- !u!65 &1351620458
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1351620456}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.2580916, y: 0.08179384, z: 0.48952276}
+  m_Center: {x: 0.116558865, y: -0.15296371, z: -0.2273245}
 --- !u!1 &1359698921
 GameObject:
   m_ObjectHideFlags: 0
@@ -1519,6 +1566,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1766238139}
+  - component: {fileID: 1766238140}
   m_Layer: 0
   m_Name: DeodorantTarget
   m_TagString: Untagged
@@ -1542,6 +1590,27 @@ Transform:
   - {fileID: 677578188}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1766238140
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1766238138}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 0.19333135, y: 0.40464133, z: 0.031098198}
+  m_Center: {x: 0.00007055914, y: 0.0035068318, z: 0.008333191}
 --- !u!1 &1802748879
 GameObject:
   m_ObjectHideFlags: 0
@@ -1551,6 +1620,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 1802748880}
+  - component: {fileID: 1802748881}
   m_Layer: 0
   m_Name: MouthwashTarget
   m_TagString: Untagged
@@ -1574,6 +1644,27 @@ Transform:
   - {fileID: 937086375}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!65 &1802748881
+BoxCollider:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1802748879}
+  m_Material: {fileID: 0}
+  m_IncludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_ExcludeLayers:
+    serializedVersion: 2
+    m_Bits: 0
+  m_LayerOverridePriority: 0
+  m_IsTrigger: 0
+  m_ProvidesContacts: 0
+  m_Enabled: 1
+  serializedVersion: 3
+  m_Size: {x: 1.3057611, y: 2.0885837, z: 0.36204338}
+  m_Center: {x: -0.2779914, y: -1.5208615, z: -2.6851301}
 --- !u!1 &1900000001
 GameObject:
   m_ObjectHideFlags: 0

@@ -19,6 +19,7 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private RectTransform handVisual;
     [Tooltip("Optional sprite face. When set, it drives the eye aim instead of the UI eyes above.")]
     [SerializeField] private CharacterEyes characterEyes;
+    [SerializeField] private Camera faceCamera;
 
     [Header("World panel")]
     [SerializeField] private RectTransform worldPanel;
@@ -31,6 +32,9 @@ public sealed class EyeGazeController : MonoBehaviour
     [SerializeField] private Transform mirrorTarget;
     [SerializeField] private RawImage rightEyeView;
     [SerializeField] private AudioClip grabSound;
+    [Header("Intro dialogue")]
+    [SerializeField] private Sprite dialogueBoxSprite;
+    [SerializeField] private Font dialogueFont;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceWidthRatio = 0.82f;
     [SerializeField, Range(0.2f, 1f)] private float mirrorFaceHeightRatio = 0.88f;
 
@@ -116,12 +120,13 @@ public sealed class EyeGazeController : MonoBehaviour
     private int introDialogueIndex;
     private RectTransform introDialoguePanel;
     private Text introDialogueText;
+    private Coroutine dialogueTextAnimation;
     private static readonly string[] IntroDialogueLines =
     {
         "ugh... my eyes get so damn itchy when i wake up",
-        "time to make myself pretty",
-        "teeth...deodorant...breathe - that should be enough",
-        "ugh MY EYESZSZSSAA"
+        "time to make myself pretty...",
+        "teeth... deodorant... breath - that should be enough",
+        "ugh MY EYyESZSZsSzzAA"
     };
     private const float DoubleVisionAlpha = 0.48f;
 
@@ -483,6 +488,7 @@ public sealed class EyeGazeController : MonoBehaviour
     private void LateUpdate()
     {
         UpdateMirrorCharacter();
+        PositionIntroDialogueAtMouth();
     }
 
     private void ConfineCursorToLeftPanel(Vector2 pointer)
@@ -521,47 +527,130 @@ public sealed class EyeGazeController : MonoBehaviour
         if ((confinedPointer - pointer).sqrMagnitude > 0.01f)
             Mouse.current.WarpCursorPosition(confinedPointer);
     }
+    private void PositionIntroDialogueAtMouth()
+    {
+        if (!introDialogueActive || introDialoguePanel == null || leftPanel == null ||
+            characterEyes == null || faceCamera == null)
+            return;
+
+        Vector3 mouthScreen = faceCamera.WorldToScreenPoint(characterEyes.MouthWorldPosition);
+        if (mouthScreen.z < 0f) return;
+
+        Canvas canvas = leftPanel.GetComponentInParent<Canvas>();
+        Camera uiCamera = canvas != null && canvas.renderMode != RenderMode.ScreenSpaceOverlay
+            ? canvas.worldCamera
+            : null;
+        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
+                leftPanel, mouthScreen, uiCamera, out Vector2 mouthLocal))
+            return;
+
+        // The speech tip sits near 62% across and 92% up the source sprite.
+        Vector2 tailOffset = new Vector2(
+            (0.62f - introDialoguePanel.pivot.x) * introDialoguePanel.rect.width,
+            0.92f * introDialoguePanel.rect.height);
+        Vector2 anchorReference = new Vector2(
+            Mathf.Lerp(leftPanel.rect.xMin, leftPanel.rect.xMax, 0.5f),
+            Mathf.Lerp(leftPanel.rect.yMin, leftPanel.rect.yMax, 0.095f));
+        introDialoguePanel.anchoredPosition = mouthLocal - anchorReference - tailOffset;
+    }
     private void CreateIntroDialogueBox()
     {
         GameObject panelObject = new GameObject("Bathroom Intro Dialogue", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
         introDialoguePanel = panelObject.GetComponent<RectTransform>();
         introDialoguePanel.SetParent(leftPanel, false);
-        introDialoguePanel.anchorMin = new Vector2(0.06f, 0.035f);
-        introDialoguePanel.anchorMax = new Vector2(0.94f, 0.22f);
+        introDialoguePanel.anchorMin = new Vector2(0.15f, 0.095f);
+        introDialoguePanel.anchorMax = new Vector2(0.85f, 0.095f);
+        introDialoguePanel.pivot = new Vector2(0.5f, 0f);
+        introDialoguePanel.anchoredPosition = Vector2.zero;
         introDialoguePanel.offsetMin = Vector2.zero;
         introDialoguePanel.offsetMax = Vector2.zero;
+        AspectRatioFitter dialogueAspect = panelObject.AddComponent<AspectRatioFitter>();
+        dialogueAspect.aspectMode = AspectRatioFitter.AspectMode.WidthControlsHeight;
+        dialogueAspect.aspectRatio = 1907f / 908f;
         introDialoguePanel.SetAsLastSibling();
 
         Image background = panelObject.GetComponent<Image>();
-        background.color = new Color(0.98f, 0.88f, 0.65f, 0.94f);
+        background.sprite = dialogueBoxSprite;
+        background.preserveAspect = true;
+        background.color = Color.white;
         background.raycastTarget = true;
-        Outline outline = panelObject.AddComponent<Outline>();
-        outline.effectColor = new Color(0.25f, 0.12f, 0.07f, 1f);
-        outline.effectDistance = new Vector2(2f, -2f);
-        outline.useGraphicAlpha = true;
 
         GameObject textObject = new GameObject("Dialogue Text", typeof(RectTransform), typeof(CanvasRenderer), typeof(Text));
         RectTransform textRect = textObject.GetComponent<RectTransform>();
         textRect.SetParent(introDialoguePanel, false);
-        textRect.anchorMin = Vector2.zero;
-        textRect.anchorMax = Vector2.one;
-        textRect.offsetMin = new Vector2(20f, 12f);
-        textRect.offsetMax = new Vector2(-20f, -12f);
+        // The sprite’s speech tail occupies its upper area; center the words in the main bubble body.
+        textRect.anchorMin = new Vector2(0.04f, 0.05f);
+        textRect.anchorMax = new Vector2(0.96f, 0.53f);
+        textRect.offsetMin = new Vector2(8f, 4f);
+        textRect.offsetMax = new Vector2(-8f, -50f);
 
         introDialogueText = textObject.GetComponent<Text>();
-        introDialogueText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        introDialogueText.fontSize = 28;
+        introDialogueText.font = dialogueFont != null
+            ? dialogueFont
+            : Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        introDialogueText.fontSize = 32;
         introDialogueText.resizeTextForBestFit = true;
-        introDialogueText.resizeTextMinSize = 18;
-        introDialogueText.resizeTextMaxSize = 28;
-        introDialogueText.alignment = TextAnchor.MiddleLeft;
+        introDialogueText.resizeTextMinSize = 24;
+        introDialogueText.resizeTextMaxSize = 32;
+        introDialogueText.alignment = TextAnchor.MiddleCenter;
         introDialogueText.horizontalOverflow = HorizontalWrapMode.Wrap;
         introDialogueText.verticalOverflow = VerticalWrapMode.Truncate;
         introDialogueText.color = new Color(0.16f, 0.08f, 0.05f, 1f);
         introDialogueText.raycastTarget = false;
-        introDialogueText.text = IntroDialogueLines[0];
+        SetIntroDialogueLine(IntroDialogueLines[0]);
     }
 
+    private void SetIntroDialogueLine(string line)
+    {
+        if (dialogueTextAnimation != null)
+            StopCoroutine(dialogueTextAnimation);
+
+        dialogueTextAnimation = StartCoroutine(AnimateIntroDialogueLine(line));
+    }
+
+    private IEnumerator AnimateIntroDialogueLine(string line)
+    {
+        if (introDialogueText == null) yield break;
+
+        RectTransform textRect = introDialogueText.rectTransform;
+        Vector2 restingPosition = textRect.anchoredPosition;
+        string[] words = line.Split(' ');
+        string completedText = string.Empty;
+        introDialogueText.text = string.Empty;
+
+        foreach (string word in words)
+        {
+            if (string.IsNullOrEmpty(word)) continue;
+
+            // Reveal and pop one complete word at a time.
+            completedText += word + " ";
+            introDialogueText.text = completedText.TrimEnd();
+            const float popDuration = 0.29f;
+            float elapsed = 0f;
+            textRect.localScale = Vector3.one;
+            textRect.anchoredPosition = restingPosition + new Vector2(-16f, 0f);
+
+            while (elapsed < popDuration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / popDuration);
+                float eased = 1f - Mathf.Pow(1f - t, 3f);
+                float slide = Mathf.Lerp(-16f, 0f, eased) + Mathf.Sin(t * Mathf.PI) * 5f;
+                float lift = Mathf.Sin(t * Mathf.PI) * 4f;
+                textRect.anchoredPosition = restingPosition + new Vector2(
+                    Mathf.Round(slide), Mathf.Round(lift));
+                yield return null;
+            }
+
+            textRect.localScale = Vector3.one;
+            textRect.anchoredPosition = restingPosition;
+            yield return new WaitForSecondsRealtime(0.055f);
+        }
+
+        textRect.localScale = Vector3.one;
+        textRect.anchoredPosition = restingPosition;
+        dialogueTextAnimation = null;
+    }
     private void UpdateIntroDialogue()
     {
         Cursor.visible = true;
@@ -575,7 +664,7 @@ public sealed class EyeGazeController : MonoBehaviour
         introDialogueIndex++;
         if (introDialogueIndex < IntroDialogueLines.Length)
         {
-            introDialogueText.text = IntroDialogueLines[introDialogueIndex];
+            SetIntroDialogueLine(IntroDialogueLines[introDialogueIndex]);
             return;
         }
 

@@ -145,6 +145,7 @@ public sealed class CharacterEyes : MonoBehaviour
     public bool IsUsingDeodorant => deodorantUseActive;
     public bool IsUsingMouthwash => mouthwashUseActive;
     public bool IsUsingToothbrush => toothbrushUseActive;
+    public Vector3 MouthWorldPosition => mouthVisual != null ? mouthVisual.bounds.center : transform.position;
 
     // Called after the deodorant pickup animation completes. The player can spray by holding LMB.
     public void BeginDeodorantUse()
