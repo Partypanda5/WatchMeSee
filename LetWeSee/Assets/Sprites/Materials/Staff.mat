@@ -7,7 +7,7 @@ Material:
   m_CorrespondingSourceObject: {fileID: 0}
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
-  m_Name: Decor 3
+  m_Name: Staff
   m_Shader: {fileID: 4800000, guid: 632cfb1ed4044de58d9b8f8f5faaf2d6, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
@@ -24,7 +24,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _MainTex:
-        m_Texture: {fileID: 2800000, guid: a01aaf5979dd4a14b9876c7598fc2a09, type: 3}
+        m_Texture: {fileID: 2800000, guid: e833e75e327969a44a05a88685476860, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _MaskTex:
@@ -38,7 +38,7 @@ Material:
     m_Ints: []
     m_Floats: []
     m_Colors:
-    - _Tint: {r: 0.6509434, g: 0.58457094, b: 0.4267978, a: 1}
+    - _Tint: {r: 0.7924528, g: 0.7924528, b: 0.7924528, a: 1}
     - _White: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

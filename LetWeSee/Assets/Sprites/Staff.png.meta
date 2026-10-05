@@ -1,10 +1,10 @@
 fileFormatVersion: 2
-guid: e8aa49ea6c778774d98e48098465d89f
+guid: e833e75e327969a44a05a88685476860
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 5488846137047389084
-    second: SinkTop_0
+      213: -5940781818166149764
+    second: Staff_0
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -126,13 +126,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: SinkTop_0
+      name: Staff_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2520
-        height: 1921
+        width: 332
+        height: 637
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +141,8 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: c931c710b7c4c2c40800000000000000
-      internalID: 5488846137047389084
+      spriteID: c7d7b18796a1e8da0800000000000000
+      internalID: -5940781818166149764
       vertices: []
       indices: 
       edges: []

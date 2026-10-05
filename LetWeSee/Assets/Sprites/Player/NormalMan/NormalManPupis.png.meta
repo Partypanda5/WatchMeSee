@@ -1,10 +1,13 @@
 fileFormatVersion: 2
-guid: e8aa49ea6c778774d98e48098465d89f
+guid: c0f8d784881b0f14fb164f7b5cff79b5
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 5488846137047389084
-    second: SinkTop_0
+      213: 4099832382388000471
+    second: NormalManPupis_0
+  - first:
+      213: -8317645289630666184
+    second: NormalManPupis_1
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -24,7 +27,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -126,13 +129,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: SinkTop_0
+      name: NormalManPupis_0
       rect:
         serializedVersion: 2
         x: 0
         y: 0
-        width: 2520
-        height: 1921
+        width: 91
+        height: 60
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +144,30 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: c931c710b7c4c2c40800000000000000
-      internalID: 5488846137047389084
+      spriteID: 7d651e674d785e830800000000000000
+      internalID: 4099832382388000471
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NormalManPupis_1
+      rect:
+        serializedVersion: 2
+        x: 505
+        y: 8
+        width: 85
+        height: 60
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 832fcd78da9c19c80800000000000000
+      internalID: -8317645289630666184
       vertices: []
       indices: 
       edges: []

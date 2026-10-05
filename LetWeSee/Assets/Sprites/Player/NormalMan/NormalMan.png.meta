@@ -1,10 +1,13 @@
 fileFormatVersion: 2
-guid: e8aa49ea6c778774d98e48098465d89f
+guid: 479e09203da68e745b8f985e1a6ec7a7
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 5488846137047389084
-    second: SinkTop_0
+      213: 6962312398011710670
+    second: NormalMan_0
+  - first:
+      213: 3875203950863622346
+    second: NormalMan_1
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -24,7 +27,7 @@ TextureImporter:
     heightScale: 0.25
     normalMapFilter: 0
     flipGreenChannel: 0
-  isReadable: 1
+  isReadable: 0
   streamingMipmaps: 0
   streamingMipmapsPriority: 0
   vTOnly: 0
@@ -126,13 +129,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: SinkTop_0
+      name: NormalMan_0
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 2520
-        height: 1921
+        x: 1818
+        y: 2906
+        width: 6
+        height: 5
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -141,8 +144,30 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: c931c710b7c4c2c40800000000000000
-      internalID: 5488846137047389084
+      spriteID: ecc39c2fc3a1f9060800000000000000
+      internalID: 6962312398011710670
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: NormalMan_1
+      rect:
+        serializedVersion: 2
+        x: 0
+        y: 0
+        width: 2592
+        height: 2844
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ac0aa6b267d77c530800000000000000
+      internalID: 3875203950863622346
       vertices: []
       indices: 
       edges: []
